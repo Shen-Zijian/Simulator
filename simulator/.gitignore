@@ -1,0 +1,7 @@
+__pycache__/
+../static/
+output/
+statistic/
+static/
+cache/
+.idea/
