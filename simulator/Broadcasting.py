@@ -42,7 +42,7 @@ def normalization(data):
     return result
 
 
-def driver_decision(distance, reward):
+def driver_decision(distance, reward, lr_model):
     """
 
     :param reward: numpyarray, price of order
@@ -60,9 +60,11 @@ def driver_decision(distance, reward):
     r = 0.5  # 乘法+调参
     for i in range(r_dis):
         for j in range(c_dis):
-            result[i, j] = r * (1 - prob_1[i][j]) + (1 - r) * prob_2[j][0]
-            result[i, j] = sigmoid(result[i, j])
+            # result[i, j] = r * (1 - prob_1[i][j]) + (1 - r) * prob_2[j][0]
+            # result[i, j] = sigmoid(result[i, j])
+            result[i, j] = lr_model.predict_proba([[prob_1[i][j],prob_2[j][0]]])[0,1]
         # calculate probability of drivers' decision
+
     return result
 
 
@@ -85,17 +87,17 @@ def Plotting(x_list, y_list, name):
     pylab.legend(loc=3, borderaxespad=0., bbox_to_anchor=(0, 0))
 
 
-def Distribution_graph(distance_array, price_array):
+def Distribution_graph(distance_array, price_array,lr_model):
     PRICE_RATIO = 3.0
     Price = 2.0
     DIS_RATIO = 3.0
     Dis = 2.0
-    prob_driver_array = driver_decision(distance_array, price_array)
-    prob_driver_array_1 = driver_decision(distance_array, PRICE_RATIO * price_array)
-    prob_driver_array_2 = driver_decision(distance_array, 2 * PRICE_RATIO * price_array)
-    # prob_driver_array = driver_decision(distance_array, price_array)
-    # prob_driver_array_1 = driver_decision(DIS_RATIO * distance_array, price_array)
-    # prob_driver_array_2 = driver_decision(2 * DIS_RATIO * distance_array, price_array)
+    prob_driver_array = driver_decision(distance_array, price_array,lr_model)
+    # prob_driver_array_1 = driver_decision(distance_array, PRICE_RATIO * price_array,lr_model)
+    # prob_driver_array_2 = driver_decision(distance_array, 2 * PRICE_RATIO * price_array,lr_model)
+    # prob_driver_array = driver_decision(distance_array, price_array,lr_model)
+    # prob_driver_array_1 = driver_decision(DIS_RATIO * distance_array, price_array,lr_model)
+    # prob_driver_array_2 = driver_decision(2 * DIS_RATIO * distance_array, price_array,lr_model)
     price_distrubute_x_axis = []
     price_distrubute_y_axis = []
     price_distrubute_y_axis_1 = []
@@ -109,8 +111,8 @@ def Distribution_graph(distance_array, price_array):
     for i in range(len(price_array)):
         price_distrubute_x_axis.append(price_sort[i][1])
         price_distrubute_y_axis.append(np.mean(prob_driver_array, axis=0)[price_sort[i][0]])
-        price_distrubute_y_axis_1.append(np.mean(prob_driver_array_1, axis=0)[price_sort[i][0]])
-        price_distrubute_y_axis_2.append(np.mean(prob_driver_array_2, axis=0)[price_sort[i][0]])
+        # price_distrubute_y_axis_1.append(np.mean(prob_driver_array_1, axis=0)[price_sort[i][0]])
+        # price_distrubute_y_axis_2.append(np.mean(prob_driver_array_2, axis=0)[price_sort[i][0]])
     Plotting(price_distrubute_x_axis, price_distrubute_y_axis, 'dis=%.2f' % Dis)
     pylab.xlabel('Price')
     plt.show()
@@ -130,20 +132,20 @@ def Distribution_graph(distance_array, price_array):
             # print("the dis =",distance_array[i, j])
             # print("the prob =",prob_driver_array[i, j])
             list_dict_prob[distance_array[i, j]] = prob_driver_array[i, j]
-            list_dict_prob_1[distance_array[i, j]] = prob_driver_array_1[i, j]
-            list_dict_prob_2[distance_array[i, j]] = prob_driver_array_2[i, j]
+            # list_dict_prob_1[distance_array[i, j]] = prob_driver_array_1[i, j]
+            # list_dict_prob_2[distance_array[i, j]] = prob_driver_array_2[i, j]
     dis_sort = sorted(list_dict_prob.items(), key=lambda kv: (kv[1], kv[0]))
     dis_sort_1 = sorted(list_dict_prob_1.items(), key=lambda kv: (kv[1], kv[0]))
     dis_sort_2 = sorted(list_dict_prob_2.items(), key=lambda kv: (kv[1], kv[0]))
     for i in range(len(list_dict_prob)):
         distance_distribute_x_axis.append(dis_sort[i][0])
         distance_distribute_y_axis.append(dis_sort[i][1])
-        distance_distribute_y_1_axis.append(dis_sort_1[i][1])
-        distance_distribute_y_2_axis.append(dis_sort_2[i][1])
+        # distance_distribute_y_1_axis.append(dis_sort_1[i][1])
+        # distance_distribute_y_2_axis.append(dis_sort_2[i][1])
     Plotting(distance_distribute_x_axis, distance_distribute_y_axis, 'price=%.2f' % Price)
     pylab.xlabel('Distance')
     # Plotting(distance_distribute_x_axis, distance_distribute_y_1_axis, 'price=%.2f' % (PRICE_RATIO * Price))
-    # Plotting(distance_distribute_x_axis, distance_distribute_y_2_axis, 'price=%.2f' % (PRICE_RATIO * Price * 2))
+    # Plotting(distance_distribute_xs_axis, distance_distribute_y_2_axis, 'price=%.2f' % (PRICE_RATIO * Price * 2))
     pylab.show()
     return
 
@@ -156,14 +158,15 @@ def generate_random_num(length):
     return res
 
 
-def dispatch_broadcasting(order_driver_info,dis_array):
+def dispatch_broadcasting(order_driver_info, dis_array, lr_model):
     """
 
     :param order_driver_info: the information of drivers and orders
     :param broadcasting_scale: the radius of order broadcasting
     :return: matched driver order pair
     """
-
+    # print("=======matching=====")
+    radius = env_params['broadcasting_scale']
     columns_name = ['order_id', 'driver_id', 'reward_units', 'pick_up_distance']
 
     order_driver_info = pd.DataFrame(order_driver_info, columns=columns_name)
@@ -190,16 +193,20 @@ def dispatch_broadcasting(order_driver_info,dis_array):
 
     # get coordinate of drivers and orders
     # get the distance between driver and order
-    for i in range(num_driver):
-        for j in range(num_order):
-            distance_driver_order[i, j] = order_driver_info.loc[(order_driver_info['order_id'] == id_order[j]) & (order_driver_info['driver_id'] == id_driver[i]), 'pick_up_distance'].values[0]
+    # print(order_driver_info.shape)
+    # print(dis_array.shape)
+    distance_driver_order = dis_array.reshape(num_driver,num_order)
+    # for i in range(num_driver):
+    #     for j in range(num_order):
+    #         distance_driver_order[i, j] = order_driver_info.loc[(order_driver_info['order_id'] == id_order[j]) & (
+    #                     order_driver_info['driver_id'] == id_driver[i]), 'pick_up_distance'].values[0]
 
-    driver_decision_info = driver_decision(distance_driver_order, price_order)
-    Distribution_graph(distance_driver_order, price_order)
+    driver_decision_info = driver_decision(distance_driver_order, price_order, lr_model)
+    # Distribution_graph(distance_driver_order, price_order, lr_model)      #distuibution graph
     # randomly decide whether the drivers pick the order or not
     for i in range(num_driver):
         for j in range(num_order):
-            if distance_driver_order[i][j] > env_params['broadcasting_scale']:
+            if distance_driver_order[i][j] > radius:
                 driver_decision_info[i, j] = 0  # delete drivers further than broadcasting_scale
     driver_pick_flag = np.zeros((num_driver, num_order), dtype=int)
     for i in range(num_driver):
@@ -232,8 +239,11 @@ def dispatch_broadcasting(order_driver_info,dis_array):
         # print("num_2", len(driver_id_list))
         # print("num_3", len(reward_list))
         # print("num_4", len(pick_up_distance_list))
+
         for i in range(min(len(driver_id_list), len(order_id_list), len(reward_list), len(pick_up_distance_list))):
             result.append([order_id_list[i], driver_id_list[i], reward_list[i], pick_up_distance_list[i]])
     else:
         result = []
+    # print("the temp result is ")
+    # print(result)
     return result
