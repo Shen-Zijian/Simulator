@@ -50,8 +50,8 @@ def driver_decision(distance, reward, lr_model):
     :param numpyarray: n, price of order
     :return: pandas.DataFrame, the probability of drivers accept the order.
     """
+    print(distance.shape)
     r_dis, c_dis = distance.shape
-    r_reward, c_reward = reward.shape  # get size of info
     result = np.zeros([r_dis, c_dis])
     # prob_1 = z_score(distance + RATIO_NOISE*np.random.normal(loc=distance.mean(), scale=1.0, size=(r_dis, c_dis)))
     # prob_2 = z_score(reward + RATIO_NOISE*np.random.normal(loc=reward.mean(), scale=1.0, size=(r_reward, c_reward)))
@@ -62,7 +62,7 @@ def driver_decision(distance, reward, lr_model):
         for j in range(c_dis):
             # result[i, j] = r * (1 - prob_1[i][j]) + (1 - r) * prob_2[j][0]
             # result[i, j] = sigmoid(result[i, j])
-            result[i, j] = lr_model.predict_proba([[prob_1[i][j],prob_2[j][0]]])[0,1]
+            result[i, j] = lr_model.predict_proba([[prob_1[i][j], prob_2[i][j]]])[0, 1]
         # calculate probability of drivers' decision
 
     return result
@@ -87,12 +87,12 @@ def Plotting(x_list, y_list, name):
     pylab.legend(loc=3, borderaxespad=0., bbox_to_anchor=(0, 0))
 
 
-def Distribution_graph(distance_array, price_array,lr_model):
+def Distribution_graph(distance_array, price_array, lr_model):
     PRICE_RATIO = 3.0
     Price = 2.0
     DIS_RATIO = 3.0
     Dis = 2.0
-    prob_driver_array = driver_decision(distance_array, price_array,lr_model)
+    prob_driver_array = driver_decision(distance_array, price_array, lr_model)
     # prob_driver_array_1 = driver_decision(distance_array, PRICE_RATIO * price_array,lr_model)
     # prob_driver_array_2 = driver_decision(distance_array, 2 * PRICE_RATIO * price_array,lr_model)
     # prob_driver_array = driver_decision(distance_array, price_array,lr_model)
@@ -158,7 +158,7 @@ def generate_random_num(length):
     return res
 
 
-def dispatch_broadcasting(order_driver_info, dis_array, lr_model):
+def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model):
     """
 
     :param order_driver_info: the information of drivers and orders
@@ -166,10 +166,12 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model):
     :return: matched driver order pair
     """
     # print("=======matching=====")
-    radius = env_params['broadcasting_scale']
-    columns_name = ['order_id', 'driver_id', 'reward_units', 'pick_up_distance']
+
+    columns_name = ['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
+                    'pick_up_distance']
 
     order_driver_info = pd.DataFrame(order_driver_info, columns=columns_name)
+
     # print(order_driver_info)
     # id of orders and drivers
     id_order = order_driver_info['order_id'].unique()
@@ -179,71 +181,103 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model):
     num_order = order_driver_info['order_id'].nunique()
     num_driver = order_driver_info['driver_id'].nunique()
 
-    # price of orders
-    price_order = []
-    for i in range(num_order):
-        line_index = np.flatnonzero(order_driver_info['order_id'] == id_order[i])[0]
-        # price_order.append(2.0)
-        price_order.append(order_driver_info.at[line_index, 'reward_units'])
-    price_order = np.array(price_order)
-    price_order.shape = (num_order, 1)
-
-    # distance of driver and order
-    distance_driver_order = np.empty([num_driver, num_order])
-
-    # get coordinate of drivers and orders
-    # get the distance between driver and order
-    # print(order_driver_info.shape)
-    # print(dis_array.shape)
-    distance_driver_order = dis_array.reshape(num_driver,num_order)
+    distance_driver_order = dis_array.reshape(num_order, num_driver)
+    price_array = np.array(order_driver_info['reward_units']).reshape(num_order, num_driver)
+    order_lng_array = np.array(order_driver_info['origin_lng']).reshape(num_order, num_driver)
+    order_lat_array = np.array(order_driver_info['origin_lat']).reshape(num_order, num_driver)
+    order_grid_id_array = np.array(order_driver_info['origin_grid_id']).reshape(num_order, num_driver)
     # for i in range(num_driver):
     #     for j in range(num_order):
     #         distance_driver_order[i, j] = order_driver_info.loc[(order_driver_info['order_id'] == id_order[j]) & (
     #                     order_driver_info['driver_id'] == id_driver[i]), 'pick_up_distance'].values[0]
+    # print("half")
+    driver_decision_info = driver_decision(distance_driver_order, price_array, lr_model)
 
-    driver_decision_info = driver_decision(distance_driver_order, price_order, lr_model)
-    # Distribution_graph(distance_driver_order, price_order, lr_model)      #distuibution graph
+    # Distribution_graph(distance_driver_order, price_order, lr_model)     #distuibution graphre
     # randomly decide whether the drivers pick the order or not
-    for i in range(num_driver):
-        for j in range(num_order):
-            if distance_driver_order[i][j] > radius:
-                driver_decision_info[i, j] = 0  # delete drivers further than broadcasting_scale
-    driver_pick_flag = np.zeros((num_driver, num_order), dtype=int)
-    for i in range(num_driver):
-        for j in range(num_order):
-            rand_num = random.random()
-            if rand_num <= driver_decision_info[i, j]:
-                driver_pick_flag[i][j] = 1
-            else:
-                driver_pick_flag[i][j] = 0
-    driver_id_list = []
+    radius = env_params['broadcasting_scale']
+    # radius_list = [5, 10, 15, 20, 25, 30, 35]
     for i in range(num_order):
-        temp_line = list(np.where(driver_pick_flag[:, i] == 1)[0])
-        temp_num = generate_random_num(len(temp_line) - 1)
-        if len(temp_line) != 0:
-            driver_id_list.append(id_driver[temp_line[temp_num]])
-            driver_pick_flag[temp_line[temp_num], 1:] = 0
-        # print("i =", i)
-        # print(pd.DataFrame(driver_pick_flag))
-        # print(driver_id_list)
+        for j in range(num_driver):
+            # temp_radius_list = []
+            # for temp_rad in radius_list:
+            #     temp_radius_list.append(mlp_model.predict([[temp_rad, order_lat_array[i,j], order_lng_array[i,j], price_array[i,j], distance_driver_order[i,j]]]))
+            # radius = radius_list[temp_radius_list.index(max(temp_radius_list))]
+            if distance_driver_order[i, j] > radius:
+                driver_decision_info[i, j] = 0  # delete drivers further than broadcasting_scale
 
-    # save result
+    driver_pick_flag = np.zeros([num_order, num_driver], dtype=int)
+    max_index_dec = np.argmax(driver_decision_info, axis=0)
+    max_dec = np.max(driver_decision_info, axis=0)
+    for i in range(num_order):
+        for j in range(num_driver):
+            if (i == max_index_dec[j]) & (max_dec[j] != 0):
+                driver_pick_flag[i, j] = 1
+            else:
+                driver_pick_flag[i, j] = 0
+
+    driver_id_list = []
+    order_id_list = []
+    reward_list = []
+    pick_up_distance_list = []
+    index = 0
+    for row in driver_pick_flag:
+        temp_line = np.argwhere(row == 1)
+        if len(temp_line) > 1:
+            temp_num = generate_random_num(len(temp_line)-1)
+            # temp_num = 1
+            row[:] = 0
+            row[temp_line[temp_num,0]] = 1
+            driver_pick_flag[index,:] = row
+        index += 1
+    matched_pair = np.argwhere(driver_pick_flag == 1)
+    matched_dict = {}
+    for item in matched_pair:
+        matched_dict[id_order[item[0]]] = [id_driver[item[1]],price_array[item[0],item[1]],distance_driver_order[item[0],item[1]]]
+        # driver_id_list.append(id_driver[item[1]])
+        # order_id_list.append(id_order[item[0]])
+        # reward_list.append(price_array[item[0],item[1]])
+        # pick_up_distance_list.append(distance_driver_order[item[0],item[1]])
+    # print("order_id_list",order_id_list)
+    # print("id_order",id_order.tolist())
+    # print("reward_list",reward_list)
+    # print("distance_list",pick_up_distance_list)
     result = []
-    order_id_list = id_order.tolist()
-    driver_id_list = list(pd.Series(driver_id_list).unique())
-    reward_list = list(order_driver_info['reward_units'].unique())
-    pick_up_distance_list = list(order_driver_info['pick_up_distance'].unique())
-    if min(len(driver_id_list), len(order_id_list), len(reward_list), len(pick_up_distance_list)) != 0:
-        # print("\nloop_num =", min(len(driver_id_list), len(order_id_list)))
-        # print("num_1", len(order_id_list))
-        # print("num_2", len(driver_id_list))
-        # print("num_3", len(reward_list))
-        # print("num_4", len(pick_up_distance_list))
+    for item in id_order.tolist():
+        if item in matched_dict:
 
-        for i in range(min(len(driver_id_list), len(order_id_list), len(reward_list), len(pick_up_distance_list))):
-            result.append([order_id_list[i], driver_id_list[i], reward_list[i], pick_up_distance_list[i]])
-    else:
-        result = []
+            result.append([item, matched_dict[item][0], matched_dict[item][1], matched_dict[item][2]])
+    # print("the result is",result)
+    # return result
+    # save result
+    # result = [[27787, '70', 20.143628131236394, 2.6983672848835987], [27786, '111', 20.143628131236394, 2.635975811541658], [27783, '151', 56.71625107671233, 0.8263673363455498], [27782, '317', 12.378608416318077, 2.0680143652281653], [27788, '408', 7.917412361884604, 3.3488798447393324], [27785, '412', 7.917412361884604, 1.753299364346717], [27784, '426', 7.917412361884604, 2.3291334114665077]]
+
+    # order_id_list = id_order.tolist()
+    # if len(driver_id_list) != 0:
+    #     for i in range(len(driver_id_list)):
+    #         result.append([order_id_list[i], driver_id_list[i], reward_list[i], pick_up_distance_list[i]])
+    # else:
+    #     result = []
+
+    print(result)
+    return result
+    # result = []
+    # # order_id_list = id_order.tolist()
+    # driver_id_list = list(pd.Series(driver_id_list).unique())
+    # # reward_list = list(order_driver_info['reward_units'].unique())
+    # # pick_up_distance_list = list(order_driver_info['pick_up_distance'].unique())
+    #
+    # if min(len(driver_id_list), len(order_id_list), len(reward_list), len(pick_up_distance_list)) != 0:
+    #     # print("\nloop_num =", min(len(driver_id_list), len(order_id_list)))
+    #     # print("num_1", len(order_id_list))
+    #     # print("num_2", len(driver_id_list))
+    #     # print("num_3", len(reward_list))
+    #     # print("num_4", len(pick_up_distance_list))
+    #
+    #     for i in range(min(len(driver_id_list), len(order_id_list), len(reward_list), len(pick_up_distance_list))):
+    #         result.append([order_id_list[i], driver_id_list[i], reward_list[i], pick_up_distance_list[i]])
+    # else:
+    #     result = []
     # print("the temp result is ")
     # print(result)
-    return result
+    # return result

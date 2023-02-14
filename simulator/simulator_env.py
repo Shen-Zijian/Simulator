@@ -210,6 +210,7 @@ class Simulator:
             new_matched_requests = df_matched[con_remain]
             new_matched_requests['t_matched'] = self.time
             new_matched_requests['pickup_distance'] = matched_itinerary_df[con_remain]['pickup_distance'].values
+            # new_matched_requests['pickup_distance'] = matched_pair_index_df[con_remain]['pickup_distance'].values
             new_matched_requests['pickup_time'] = new_matched_requests[
                                                       'pickup_distance'].values / self.vehicle_speed * 3600
             new_matched_requests['t_end'] = self.time + new_matched_requests['pickup_time'].values + \
@@ -635,12 +636,12 @@ class Simulator:
         reward = []
         orders = orders.dropna(axis=0, how='any')
         for i in range(len(orders)):
-            temp_reward = orders['weight'][i] - orders['pickup_time'][i]/60
+            temp_reward = (orders['weight'][i])/(orders['wait_time'][i]/60 + orders['pickup_time'][i]/60)
             reward.append(temp_reward)
         temp_df = pd.DataFrame(reward, columns=['%s' % config.env_params['broadcasting_scale']])
         return temp_df
 
-    def step(self):
+    def step(self,lr_model,mlp_model):
         """
         This function used to run the simulator step by step
         :return:
@@ -652,16 +653,18 @@ class Simulator:
         # print('cruise_flag1 =', self.cruise_flag)
         # Step 1: order dispatching
         wait_requests = deepcopy(self.wait_requests)  # default wait_requests = None
-
         driver_table = deepcopy(self.driver_table)  # default driver_table = None
         # Step 2: driver/passenger reaction after dispatching
         # print('cruise_flag2 =', self.cruise_flag)
         if order_dispatch(wait_requests, driver_table, self.maximal_pickup_distance, self.dispatch_method) is not None:
             matched_pair_actual_indexes, matched_itinerary = order_dispatch(wait_requests, driver_table,
                                                                             self.maximal_pickup_distance,
-                                                                            self.dispatch_method)
+                                                                            self.dispatch_method,lr_model,mlp_model)
+
+            # print(matched_pair_actual_indexes)
             df_new_matched_requests, df_update_wait_requests = self.update_info_after_matching_multi_process(
                 matched_pair_actual_indexes, matched_itinerary)
+            # print(df_new_matched_requests[['order_id','driver_id','pickup_distance']])
             self.matched_requests = pd.concat([self.matched_requests, df_new_matched_requests], axis=0,
                                               ignore_index=True)
 
@@ -677,9 +680,9 @@ class Simulator:
             #self.reward=new_reward
 
             #print(self.reward)
-
-            self.matched_requests = self.matched_requests.reset_index(drop=True)
             self.wait_requests = df_update_wait_requests.reset_index(drop=True)
+            self.matched_requests = self.matched_requests.reset_index(drop=True)
+
         # print('cruise_flag3 =', self.cruise_flag)
         # Step 3: bootstrap new orders
         self.order_generation()

@@ -6,10 +6,10 @@ CRUISE = False
 CRUISE_MODE = 'random'
 REPOSITION = True
 
-
+# morning :25200-32400, evening:61200-68400 midnight:0-18000
 env_params = {
-    't_initial': 36000,
-    't_end': 79200,
+    't_initial': 68400,
+    't_end': 86400,
     'delta_t': 5,  # s
     'vehicle_speed': 22.788,  # km / h
     'repo_speed': 1,  # 目前的设定需要与vehicl speed保持一致
@@ -23,8 +23,8 @@ env_params = {
     "maximum_pickup_time_passenger_can_tolerate_std": PICKUP_TIME_STD,  # s
     "maximum_price_passenger_can_tolerate_mean": PRICE_MEAN,  # ￥
     "maximum_price_passenger_can_tolerate_std": PRICE_STD,  # ￥
-    'maximal_pickup_distance': 1,  # km
-    'broadcasting_scale' : 35,
+    'maximal_pickup_distance': 20,  # km
+    'broadcasting_scale': 35,
     'request_interval': 5,  #
     'cruise_flag': CRUISE,
     'delivery_mode': 'rg',
