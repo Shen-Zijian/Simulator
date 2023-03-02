@@ -1,14 +1,15 @@
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
 import matplotlib.pylab as plt
-import pandas as pd
 import pickle
 import numpy as np
 import json
 import pandas as pd
 import time
 import seaborn as sns
+from sklearn.metrics import classification_report
 
 pd.options.mode.chained_assignment = None
 # This is a sample Python script.
@@ -273,11 +274,11 @@ def data_cleaning():
     # print(trip_info.loc[(trip_info['route_distance_to_passenger'] == trip_info['route_distance_to_passenger'])&(trip_info['driver_id']==11018 ),('driver_id','route_distance_to_passenger','created_at')])
     driver_with_distance = trip_info.loc[
         (trip_info['route_distance_to_passenger'] == trip_info['route_distance_to_passenger']) & (
-                    trip_info['driver_id'] == trip_info['driver_id']) & (
-                    trip_info['created_at'] == trip_info['created_at']) & (
-                    trip_info['picked_up_at'] == trip_info['picked_up_at']), (
-        'driver_id', 'route_distance_to_passenger', 'created_at', 'pick_up_time', 'picked_up_at', 'passenger_id',
-        'cancelled_at', 'ride_price', 'total_price', 'final_price')]
+                trip_info['driver_id'] == trip_info['driver_id']) & (
+                trip_info['created_at'] == trip_info['created_at']) & (
+                trip_info['picked_up_at'] == trip_info['picked_up_at']), (
+            'driver_id', 'route_distance_to_passenger', 'created_at', 'pick_up_time', 'picked_up_at', 'passenger_id',
+            'cancelled_at', 'ride_price', 'total_price', 'final_price')]
     dist_list_distribution = []
     driver_id_list = []
     cancel_order_identify(driver_with_distance)
@@ -330,28 +331,87 @@ def data_cleaning():
     # load_dict['smallberg'] = [8200, {1: [['Python', 81], ['shirt', 300]]}]
     # print(load_dict)
 
+def label_creation(data_miss_label):
+    # label_dict = {'0-morning':,'0-evening':,'0-midnight':,'0-other':,
+    # '0-morning':,'0-evening':,'0-midnight':,'0-other':,
+    # '0-morning':,'0-evening':,'0-midnight':,'0-other':,
+    # '0-morning':,'0-evening':,'0-midnight':,'0-other':,
+    # '0-morning':,'0-evening':,'0-midnight':,'0-other':,
+    # }
+
+    data_eval = pd.read_csv('evaluation_whole_day.csv')
+    grid_id_list = data_eval['grid_id'].unique()
+    time_list = data_eval['time'].unique()
+    group_data = data_eval[['grid_id','time','total price']].groupby(by=['grid_id','time'],as_index=False).max()
+    merge_data = pd.merge(group_data,data_eval[['grid_id','time','total price','radius']],on=['grid_id','time','total price'],how='left')
+    print(merge_data)
+    label_list = []
+    for index,item in data_miss_label.iterrows():
+        # print(float(item['order_grid_id']),item['time_period'])
+
+        best_radius = merge_data.loc[(merge_data['grid_id']==float(item['order_grid_id']))&(merge_data['time']==item['time_period'])]
+        best_value = best_radius['radius'].values[0]
+        label_list.append(best_value)
+    res_dict = {}
+    for item in label_list:
+        res_dict[item] = res_dict.get(item,0)+1
+    print(res_dict)
+    label_col = pd.DataFrame(label_list,columns=['best_radius'])
+    result = pd.concat((data_miss_label, label_col), axis=1)
+    return result
 
 def MLP_nn():
-    data = pd.read_csv("train.csv")
-    # data = data.dropna()
-    print(data.columns)
-    output = data['reward']
-    input = data.drop(['reward', 'Unnamed: 0', 'trip_time', 'origin_lat', 'origin_lng','wait_time'], axis=1)
-    print(input)
+    data = pd.read_csv("train_random_driver_whole_day.csv")
+    data = data.dropna(how='any')
+    # print(data.columns)
+
+    input_data = data.drop(
+        ['wait_time', 'trip_time', 'trip_distance', 'reward', 'Unnamed: 0', 'Unnamed: 0.1', 'order_lng', 'order_lat','radius'],
+        axis=1)
+    input_data = input_data.reset_index(drop=True)
+    input_data = label_creation(input_data)
+
+    # print(input_data.columns)
+    enc = OneHotEncoder()
+    switch_feature = np.array(input_data['time_period'].values)
+    # switch_feature = np.array(['1','1','2','3','5'])
+    switch_feature = switch_feature.reshape(-1, 1)
+
+    enc.fit_transform(switch_feature).toarray()
+    encoding_result = enc.fit_transform(switch_feature).toarray()
+    encoding_result =pd.DataFrame(encoding_result, columns=['evening', 'midnight', 'morning', 'other'])
+    input_data = input_data.drop(['time_period'],axis=1)
+    input_data = pd.concat((input_data, encoding_result), axis=1)
+    input = input_data.drop(['best_radius'], axis=1)
+    output = input_data['best_radius']
+    # print(input_data)
     x_train, x_test, y_train, y_test = train_test_split(input, output, test_size=0.2, random_state=0)
     X = x_train
     y = y_train
+    cols = X.columns
     scaler = StandardScaler()  # 标准化转换
     scaler.fit(X)  # 训练标准化对象
     X = scaler.transform(X)  # 转换数据集
-    clf = MLPRegressor(solver='sgd', alpha=1e-5, hidden_layer_sizes=(5, 1), random_state=1)
+    X = pd.DataFrame(X, columns=cols)
+    clf = MLPRegressor(solver='sgd', alpha=1e-5, hidden_layer_sizes=(10, 1), random_state=1)
+
     clf.fit(X, y)
-    print('预测结果：', clf.predict([[2.601150, 5, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
-    print('预测结果：', clf.predict([[2.601150, 10, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
-    print('预测结果：', clf.predict([[2.601150, 15, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
-    print('预测结果：', clf.predict([[2.601150, 20, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
-    print('预测结果：', clf.predict([[2.601150, 25, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
-    print('预测结果：', clf.predict([[2.601150, 30, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
+    y_true = y_test
+    y_pred = clf.predict(x_test)
+    # print(classification_report(y_true, y_pred))
+    # print()
+    print(y_true.values)
+    result_pred = pd.DataFrame(y_true.values,columns=['Best_radius'])
+    result_pred['Predict_radius'] = y_pred
+    result_pred['Best_radius'] = y_true.values
+    result_pred.to_csv('./experiment/predict_MLP.csv')
+    print(clf.score(x_test, y_test))
+    print('预测结果：', clf.predict([[5,20,1.203,0,0,0,1]]))  # 预测某个输入对象
+    # print('预测结果：', clf.predict([[2.601150, 10, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
+    # print('预测结果：', clf.predict([[2.601150, 15, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
+    # print('预测结果：', clf.predict([[2.601150, 20, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
+    # print('预测结果：', clf.predict([[2.601150, 25, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
+    # print('预测结果：', clf.predict([[2.601150, 30, 40.7679674, -73.9682154, 5, 27.7, 8]]))  # 预测某个输入对象
     cengindex = 0
     for wi in clf.coefs_:
         cengindex += 1  # 表示底第几层神经网络。
@@ -360,11 +420,34 @@ def MLP_nn():
         print('系数矩阵：\n', wi)
     return clf
 
+def graph():
+    data = pd.read_csv('./experiment/predict_MLP.csv')
+
+    y_1 = data['Best_radius'].tolist()
+    y_2 = data['Predict_radius'].tolist()
+    x = []
+    for i in range(len(y_1)):
+        x.append(i)
+    print(x)
+    # x = [1,2,3]
+    # y = [4,5,6]
+    # print(y_1)
+    # print(y_2)
+
+    plt.scatter(x, y_2, color='g', label="Predict radius")  # o-:圆形
+    plt.scatter(x, y_1, color='r', label="Best radius")  # s-:方形
+    plt.xlabel("Index")  # 横坐标名字
+    plt.ylabel("Radius")  # 纵坐标名字
+    plt.legend(loc="best")  # 图例
+    plt.show()
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     # test()
     # data_cleaning()
+    l1 = [0,0,1,0]
+    l2 = [1.5,2,5]
+    print(l1+l2)
     MLP_nn()
-
+    # graph()
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
