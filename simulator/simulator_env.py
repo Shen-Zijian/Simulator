@@ -3,7 +3,6 @@ import numpy
 import Broadcasting
 import pandas as pd
 
-
 import config
 from simulator_pattern import *
 from utilities import *
@@ -16,6 +15,10 @@ class Simulator:
     def __init__(self, **kwargs):  # **kwargs 传输不定长度的键值对
 
         # basic parameters: time & sample
+        self.total_order = None
+        self.temp_all_order = None
+        self.temp_matched_order = None
+        self.grid_data = None
         self.t_initial = kwargs['t_initial']
         self.t_end = kwargs['t_end']
         self.delta_t = kwargs['delta_t']
@@ -87,7 +90,7 @@ class Simulator:
 
         self.wait_requests = None
         self.matched_requests = None
-
+        self.all_requests = None
         # driver tables
         self.driver_columns = ['driver_id', 'start_time', 'end_time', 'lng', 'lat', 'grid_id', 'status',
                                'target_loc_lng', 'target_loc_lat', 'target_grid_id', 'remaining_time',
@@ -103,7 +106,8 @@ class Simulator:
         self.request_all = pattern.request_all
         self.request_databases = None
         self.request_database = None
-
+        self.driver_online_time = pd.DataFrame(columns=['grid_id','online_time'])
+        self.driver_usage_time = pd.DataFrame(columns=['grid_id','usage_time'])
     def initial_base_tables(self):
         """
         This function used to initial the driver table and order table
@@ -131,13 +135,22 @@ class Simulator:
         column_name = ['order_id', 'origin_id', 'origin_lat', 'origin_lng', 'dest_id', 'dest_lat', 'dest_lng',
                        'trip_distance', 'start_time', 'origin_grid_id', 'dest_grid_id', 'itinerary_node_list',
                        'itinerary_segment_dis_list', 'trip_time', 'designed_reward', 'cancel_prob']
+
         self.requests = pd.DataFrame(request_list, columns=column_name)
         self.requests['matching_time'] = 0
         self.requests['pickup_end_time'] = 0
         self.requests['delivery_end_time'] = 0
         self.wait_requests = pd.DataFrame(columns=self.request_columns)
         self.matched_requests = pd.DataFrame(columns=self.request_columns)
-        # self.reward = pd.DataFrame(columns=['order_id'])
+        grid_data_columns = ['time_stamp', 'time_period', 'grid_id', 'num_order', 'num_matched_order', 'num_available_driver',
+                     'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price', 'radius',
+                     'driver_utilization_rate']
+        self.grid_data = pd.DataFrame(columns=grid_data_columns)
+        self.grid_data.to_csv("./experiment/train_grid" + f"_{env_params['time_period']}" + "_grid_data.csv", mode='a',
+                              index=False, sep=',')
+        self.temp_matched_order = pd.DataFrame(columns=self.request_columns)
+        self.temp_all_order = pd.DataFrame(columns=self.request_columns)
+        self.total_order = pd.DataFrame(columns=column_name)
 
     def reset(self):
         self.initial_base_tables()
@@ -256,6 +269,7 @@ class Simulator:
                     time_array = np.concatenate([np.array([self.time]), self.time + time_array])
                     delivery_time = len(new_matched_requests['itinerary_node_list'].values.tolist()[j])
                     pickup_time = len(time_array) - delivery_time
+
                     task_type_array = np.concatenate([2 + np.zeros(pickup_time), 1 + np.zeros(delivery_time)])
                     order_id = self.driver_table.loc[index, 'matched_order_id']
 
@@ -361,6 +375,7 @@ class Simulator:
                 # wait_info = wait_info.drop(columns=['trip_distance'])
                 # wait_info = wait_info.drop(columns=['designed_reward'])
                 self.wait_requests = pd.concat([self.wait_requests, wait_info], ignore_index=True)
+                self.total_order = pd.concat([self.total_order, wait_info], ignore_index=True)
 
         return
 
@@ -636,12 +651,89 @@ class Simulator:
         reward = []
         orders = orders.dropna(axis=0, how='any')
         for i in range(len(orders)):
-            temp_reward = (orders['weight'][i])/(orders['wait_time'][i]/60 + orders['pickup_time'][i]/60)
+            temp_reward = (orders['weight'][i]) / (orders['wait_time'][i] / 60 + orders['pickup_time'][i] / 60)
             reward.append(temp_reward)
         temp_df = pd.DataFrame(reward, columns=['%s' % config.env_params['broadcasting_scale']])
         return temp_df
 
-    def step(self,lr_model,mlp_model):
+    def grid_reset(self):
+        self.grid_data = pd.DataFrame(
+            columns=['time_stamp', 'time_period', 'grid_id', 'num_order', 'total_num_matched_order',
+                     'num_driver',
+                     'avg_matched_pick_up_distance', 'avg_matched_price', 'avg_pick_up_distance',
+                     'avg_price', 'radius',
+                     'driver_utilization_rate'])
+        self.temp_matched_order = pd.DataFrame(columns=self.request_columns)
+        self.temp_all_order = pd.DataFrame(columns=self.request_columns)
+        self.total_order = pd.DataFrame(
+            columns=['order_id', 'origin_id', 'origin_lat', 'origin_lng', 'dest_id', 'dest_lat', 'dest_lng',
+                     'trip_distance', 'start_time', 'origin_grid_id', 'dest_grid_id', 'itinerary_node_list',
+                     'itinerary_segment_dis_list', 'trip_time', 'designed_reward', 'cancel_prob'])
+        self.driver_online_time = pd.DataFrame(columns=['grid_id','online_time'])
+        self.driver_usage_time = pd.DataFrame(columns=['grid_id','usage_time'])
+    def driver_time(self,driver_info_table,temp_all):
+        grid_list = temp_all['origin_grid_id'].unique()
+        for item in grid_list:
+            num_all_driver = len(driver_info_table.loc[driver_info_table['grid_id'] == item])
+            num_usage_driver = len(driver_info_table.loc[(driver_info_table['grid_id'] == item) & ((driver_info_table['status'] == 1)|(driver_info_table['status'] == 2))])
+            if len(self.driver_online_time.loc[self.driver_online_time['grid_id'] == item]) == 0:
+                self.driver_online_time.loc[len(self.driver_online_time.index)] = [item, 0]
+            else:
+                self.driver_online_time.loc[self.driver_online_time['grid_id'] == item, 'online_time'] += env_params['delta_t'] * num_all_driver
+
+            if len(self.driver_usage_time.loc[self.driver_usage_time['grid_id'] == item]) == 0:
+                self.driver_usage_time.loc[len(self.driver_usage_time.index)] = [item, 0]
+            else:
+                self.driver_usage_time.loc[self.driver_usage_time['grid_id'] == item,'usage_time'] += env_params['delta_t'] * num_usage_driver
+            print(num_all_driver,num_usage_driver)
+        return
+
+    def update_grid_data(self, temp_match, temp_all, wait_info, driver_info):
+        temp_grid_data = pd.DataFrame(
+            columns=['time_stamp', 'time_period', 'grid_id', 'num_order', 'num_matched_order', 'num_available_driver',
+                     'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price', 'radius',
+                     'driver_utilization_rate'])
+        time_stamp = f'{self.time - 30}-' + f'{self.time}'
+        time_period = env_params['time_period']
+        cur_radius = env_params['broadcasting_scale']
+        grid_list = list(range(1,16))
+        for item in grid_list:
+            num_available_driver = len(driver_info.loc[(driver_info['grid_id'] == item) & (driver_info['status'] == 0) | (driver_info['status'] == 4)])
+            num_matched_order = len(temp_match.loc[temp_match['origin_grid_id'] == item])
+            num_order = np.average(len(wait_info.loc[wait_info['origin_grid_id'] == item]))
+
+            driver_online_time = self.driver_online_time.loc[
+                self.driver_online_time['grid_id'] == item, 'online_time'].values
+            driver_usage_time = self.driver_usage_time.loc[
+                self.driver_usage_time['grid_id'] == item, 'usage_time'].values
+            if num_matched_order != 0:
+                avg_matched_pickup_distance = np.average(
+                    temp_match.loc[temp_match['origin_grid_id'] == item, 'pickup_distance'].values)
+                avg_matched_price = np.average(temp_match.loc[temp_match['origin_grid_id'] == item, 'weight'].values)
+                avg_price = np.average(temp_all.loc[temp_all['origin_grid_id'] == item, 'reward_units'].values)
+                avg_pickup_distance = np.average(
+                    temp_all.loc[temp_all['origin_grid_id'] == item, 'pickup_distance'].values)
+            else:
+                avg_matched_pickup_distance = 0
+                avg_matched_price = 0
+                avg_price = 0
+                avg_pickup_distance = 0
+            if (len(driver_online_time) == 0) & (len(driver_usage_time)==0):
+                driver_unilization_rate = 0
+            else:
+                driver_unilization_rate = (driver_usage_time / driver_online_time)[0]
+            temp_grid_data.loc[len(temp_grid_data.index)] = [time_stamp, time_period, item, num_order,
+                                                             num_matched_order, num_available_driver, avg_matched_pickup_distance,
+                                                             avg_matched_price, avg_pickup_distance, avg_price,
+                                                             cur_radius, driver_unilization_rate]
+
+
+        temp_grid_data.to_csv("./experiment/train_grid" + f"_{env_params['time_period']}" + "_grid_data.csv", mode='a',
+                              index=False,header=False, sep=',')
+        self.grid_reset()
+        return temp_grid_data
+
+    def step(self, lr_model, mlp_model):
         """
         This function used to run the simulator step by step
         :return:
@@ -657,9 +749,13 @@ class Simulator:
         # Step 2: driver/passenger reaction after dispatching
         # print('cruise_flag2 =', self.cruise_flag)
         if order_dispatch(wait_requests, driver_table, self.maximal_pickup_distance, self.dispatch_method) is not None:
-            matched_pair_actual_indexes, matched_itinerary = order_dispatch(wait_requests, driver_table,
-                                                                            self.maximal_pickup_distance,
-                                                                            self.dispatch_method,lr_model,mlp_model)
+            matched_pair_actual_indexes, matched_itinerary, new_match_cancel_requests = order_dispatch(wait_requests,
+                                                                                                       driver_table,
+                                                                                                       self.maximal_pickup_distance,
+                                                                                                       self.dispatch_method,
+                                                                                                       lr_model,
+                                                                                                       mlp_model,
+                                                                                                       self.time)
 
             # print(matched_pair_actual_indexes)
             df_new_matched_requests, df_update_wait_requests = self.update_info_after_matching_multi_process(
@@ -667,25 +763,23 @@ class Simulator:
             # print(df_new_matched_requests[['order_id','driver_id','pickup_distance']])
             self.matched_requests = pd.concat([self.matched_requests, df_new_matched_requests], axis=0,
                                               ignore_index=True)
+            self.temp_matched_order = pd.concat([self.temp_matched_order, df_new_matched_requests], axis=0,
+                                                ignore_index=True)
+            self.temp_all_order = pd.concat([self.temp_all_order, new_match_cancel_requests], axis=0,
+                                            ignore_index=True)
 
-            # r_list = [5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30]
-            # for radius in r_list:
-            #     config.env_params['broadcasting_scale'] = radius
-            #     print(self.matched_requests['wait_time'])
-            #new_reward = self.cal_reward(self.matched_requests)
-            # self.reward['order_id'].append(self.wait_requests['order_id']) new_reward.insert(new_reward.shape[1],
-            # '%s' % config.env_params['broadcasting_scale'], config.env_params['broadcasting_scale']) self.reward =
-            # pd.concat([self.reward, new_reward], axis=0, ignore_index=True)
-            #print(new_reward)
-            #self.reward=new_reward
-
-            #print(self.reward)
             self.wait_requests = df_update_wait_requests.reset_index(drop=True)
             self.matched_requests = self.matched_requests.reset_index(drop=True)
 
         # print('cruise_flag3 =', self.cruise_flag)
         # Step 3: bootstrap new orders
         self.order_generation()
+        self.driver_time(driver_table,self.temp_all_order)
+        if self.time % 30 == 0:
+            grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
+                                              driver_table)
+            self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
+                                       ignore_index=True)
 
         # print('cruise_flag4 =', self.cruise_flag)
         # Step 4: both-rg-cruising and/or repositioning decision
@@ -704,4 +798,4 @@ class Simulator:
         # Step 7: update time
         self.update_time()
 
-        return self.new_tracks
+        return self.new_tracks, self.all_requests

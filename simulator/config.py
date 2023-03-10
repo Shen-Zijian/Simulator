@@ -2,18 +2,19 @@ PRICE_MEAN = float('inf')
 PRICE_STD = 0
 PICKUP_TIME_MEAN = float('inf')
 PICKUP_TIME_STD = 0
-CRUISE = False
+CRUISE = True
 CRUISE_MODE = 'random'
-REPOSITION = True
+REPOSITION = False
 
-# morning :25200-32400, evening:61200-68400 midnight:0-18000
+# morning :25200-32400, evening:61200-68400 midnight:0-18000 other:68400-86400
 env_params = {
-    't_initial': 68400,
-    't_end': 86400,
+    't_initial': 0,
+    't_end': 18000,
+    'time_period':'midnight',
     'delta_t': 5,  # s
     'vehicle_speed': 22.788,  # km / h
     'repo_speed': 1,  # 目前的设定需要与vehicl speed保持一致
-    'order_sample_ratio': 1,
+    'order_sample_ratio': 0.5,
     'order_generation_mode': 'sample_from_base',
     'driver_sample_ratio': 1,
     'maximum_wait_time_mean': 300,
@@ -24,7 +25,7 @@ env_params = {
     "maximum_price_passenger_can_tolerate_mean": PRICE_MEAN,  # ￥
     "maximum_price_passenger_can_tolerate_std": PRICE_STD,  # ￥
     'maximal_pickup_distance': 20,  # km
-    'broadcasting_scale': 35,
+    'broadcasting_scale': 2.5,
     'request_interval': 5,  #
     'cruise_flag': CRUISE,
     'delivery_mode': 'rg',

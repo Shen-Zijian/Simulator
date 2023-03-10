@@ -518,7 +518,7 @@ def skewed_normal_distribution(u, thegma, k, omega, a, input_num):
 
 
 def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dispatch_method='LD',
-                   lr_model=train_model(), mlp_model=MLP_nn()):
+                   lr_model=train_model(), mlp_model=None,cur_time=0):
     """
     :param wait_requests: the requests of orders
     :type wait_requests: pandas.DataFrame
@@ -537,7 +537,8 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
     num_idle_driver = idle_driver_table.shape[0]
     matched_pair_actual_indexs = []
     matched_itinerary = []
-
+    new_all_requests = pd.DataFrame(columns=['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
+                    'pick_up_distance','time','time_period','num_wait_requests','num_available_drivers','radius','match_state'])
     if num_wait_request > 0 and num_idle_driver > 0:
         if dispatch_method == 'LD':
             # generate order driver pairs and corresponding itinerary
@@ -562,11 +563,11 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
             # if len(flag) > 0:
             #     order_driver_pair = np.vstack(
             #         [request_array[flag, 2], driver_loc_array[flag, 2], request_array[flag, 3], dis_array[flag]]).T
-            matched_pair_actual_indexs = Broadcasting.dispatch_broadcasting(order_driver_pair.tolist(), dis_array,
-                                                                            lr_model, mlp_model)
+            matched_pair_actual_indexs,new_all_requests = Broadcasting.dispatch_broadcasting(order_driver_pair.tolist(), dis_array,
+                                                                            lr_model, mlp_model,cur_time,driver_table)
             # matched_pair_actual_indexs = LD(order_driver_pair.tolist())
             if len(matched_pair_actual_indexs) == 0:
-                return [], []
+                return [], [], new_all_requests
             else:
                 request_indexs = np.array(matched_pair_actual_indexs)[:, 0]
                 driver_indexs = np.array(matched_pair_actual_indexs)[:, 1]
@@ -590,11 +591,9 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
             matched_itinerary = [itinerary_node_list, itinerary_segment_dis_list, dis_array]
             # print('matched_pair_actual_indexs =',len(matched_pair_actual_indexs))
             # print('np.array(matched_itinerary =',len(np.array(matched_itinerary)))
-
-    # print("matched_pair:", matched_pair_actual_indexs)
-    # print("matched_itinearary:", np.array(matched_itinerary))
-    # print(matched_pair_actual_indexs)
-    return matched_pair_actual_indexs, np.array(matched_itinerary)
+    # print("========utilitty========")
+    # print(new_all_requests['time'])
+    return matched_pair_actual_indexs, np.array(matched_itinerary), new_all_requests
 
 
 def driver_online_offline_decision(driver_table, current_time):
