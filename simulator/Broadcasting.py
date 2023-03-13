@@ -5,7 +5,7 @@ import pandas as pd
 from numpy import *
 import pickle
 from copy import deepcopy
-
+from operator import itemgetter
 import main
 import utilities
 from config import env_params
@@ -197,7 +197,7 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     new_all_requests['time_period'] = env_params['time_period']
     new_all_requests['num_wait_requests'] = num_order
     new_all_requests['num_available_drivers'] = num_driver
-    new_all_requests['radius'] = env_params['broadcasting_scale']
+    new_all_requests['radius'] = itemgetter(*order_driver_info['origin_grid_id'].values)(env_params['grid_radius_dict'])
     new_all_requests['match_state'] = 4
     new_all_requests['origin_grid_id'] = order_driver_info['origin_grid_id']
     new_all_requests['pickup_distance'] = dis_array
@@ -207,6 +207,7 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     price_array = np.array(order_driver_info['reward_units'], dtype='float32').reshape(num_order, num_driver)
     order_grid_id_array = np.array(order_driver_info['origin_grid_id']).reshape(num_order, num_driver)
     radius_array = np.array(new_all_requests['radius']).reshape(num_order, num_driver)
+
     match_state_array = np.array(order_driver_info['match_state']).reshape(num_order, num_driver)
     # for i in range(num_driver):
     #     for j in range(num_order):
