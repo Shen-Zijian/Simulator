@@ -9,9 +9,11 @@ from simulator_pattern import *
 from utilities import *
 import joblib
 import torch
+
 np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 import sys
 import torch
+import os
 
 sys.path.insert(0, '/home/shenzijian/下载/regression-model/regression_model')
 
@@ -130,7 +132,7 @@ class Simulator:
         # construct order table
         self.request_databases = deepcopy(self.request_all)  # deepcopy 地址不同的复制，避免变量之间的相互影响
         # stand_scaler
-        self.stand_scaler = joblib.load('./input/stand_scaler.bin')
+        self.stand_scaler = joblib.load('./input/8_stand_scaler.bin')
         # grid_based model
         label = env_params['label_name']
         model_name = env_params['model_name']
@@ -158,12 +160,18 @@ class Simulator:
                              'num_available_driver',
                              'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price',
                              'radius',
-                             'driver_utilization_rate','total_matched_price']
+                             'driver_utilization_rate', 'total_matched_price']
         self.grid_data = pd.DataFrame(columns=grid_data_columns)
         label = env_params['label_name']
         model = env_params['model_name']
-        self.grid_data.to_csv(f"./experiment_{model}/train_grid_data_{label}.csv", mode='a', index=False, sep=',')
-        self.lstm_buffer = np.empty([1,1,8])
+        folder_path = f"./experiment_{model}/record/"
+        file_name = f"matched_record_{label}.csv"
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        self.file_path = os.path.join(folder_path, file_name)
+        self.grid_data.to_csv(self.file_path, mode='a', index=False,
+                              sep=',')  # f"./experiment_{model}/record/train_grid_data_{label}.csv"
+        self.lstm_buffer = np.empty([1, 1, 8])
         self.temp_matched_order = pd.DataFrame(columns=self.request_columns)
         self.temp_all_order = pd.DataFrame(columns=self.request_columns)
         self.total_order = pd.DataFrame(columns=column_name)
@@ -714,7 +722,7 @@ class Simulator:
         temp_grid_data = pd.DataFrame(
             columns=['time_stamp', 'time_period', 'grid_id', 'num_order', 'num_matched_order', 'num_available_driver',
                      'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price', 'radius',
-                     'driver_utilization_rate','total_price'])
+                     'driver_utilization_rate', 'total_price'])
         time_stamp = self.time - 30
         time_period = time_period_dict[env_params['time_period']]
         if env_params['model_name'] == 'fixed':
@@ -762,22 +770,26 @@ class Simulator:
                 pass
             elif env_params['model_name'] == 'lstm':
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                if len(self.lstm_buffer) != env_params['lstm_dict']['len_seq']:
-                    temp_data = np.array(
-                        [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
-                         0, num_order], dtype='float32')
-                    temp_data = np.expand_dims(temp_data, axis=0)  # 扩展为二维数组，维度为[1,8]
-                    temp_data = np.expand_dims(temp_data, axis=1)  # 扩展为三维数组，维度为[1,1,8]
+                temp_data = np.array(
+                    [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
+                     0, num_order], dtype='float32').reshape(1, -1)
+                temp_data = self.stand_scaler.transform(temp_data)
+                temp_data = np.expand_dims(temp_data, axis=0)
+                if len(self.lstm_buffer) < env_params['lstm_dict']['len_seq']:
                     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)
                 else:
+                    self.lstm_buffer = np.delete(self.lstm_buffer, 0, axis=1)  # pop out T1
+                    self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)  # insert T5
                     for radius_ in env_params['radius_list']:
-                        self.lstm_buffer[-2,:] = radius_
+                        self.lstm_buffer[:, :, -2] = radius_
                         input_data = torch.from_numpy(self.lstm_buffer).to(torch.float32).to(device)
+                        print(input_data.size())
                         outputs = self.grid_model(input_data).item()
                         if outputs > best_reward:
                             best_reward = outputs
                             best_radius = radius_
                     env_params['grid_radius_dict'][f'{item}'] = best_radius
+            # elif env_params['model_name'] == 'mtl':
 
             else:
                 for radius_ in env_params['radius_list']:
@@ -787,20 +799,20 @@ class Simulator:
 
                     data_30s = self.stand_scaler.transform(data_30s)
                     data_30s = torch.from_numpy(data_30s)
-                    outputs = self.grid_model(data_30s).item()
+                    outputs = np.sum(self.grid_model(data_30s).detach().numpy())
                     if outputs > best_reward:
                         best_reward = outputs
                         best_radius = radius_
                 env_params['grid_radius_dict'][f'{item}'] = best_radius
 
             temp_grid_data.loc[len(temp_grid_data.index)] = [time_stamp, time_period, item, num_order,
-                                                                 num_matched_order, num_available_driver,
-                                                                 avg_matched_pickup_distance,
-                                                                 avg_matched_price, avg_pickup_distance, avg_price,
-                                                                 cur_radius, driver_unilization_rate,total_price]
+                                                             num_matched_order, num_available_driver,
+                                                             avg_matched_pickup_distance,
+                                                             avg_matched_price, avg_pickup_distance, avg_price,
+                                                             cur_radius, driver_unilization_rate, total_price]
         lable_name = env_params['label_name']
         model_name = env_params['model_name']
-        temp_grid_data.to_csv(f"./experiment_{model_name}/train_grid_data_{lable_name}.csv", mode='a',
+        temp_grid_data.to_csv(self.file_path, mode='a',
                               index=False, header=False, sep=',')
         self.grid_reset()
         return temp_grid_data
