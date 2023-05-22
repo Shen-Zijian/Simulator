@@ -9,14 +9,14 @@ from simulator_pattern import *
 from utilities import *
 import joblib
 import torch
-
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 import sys
 import torch
 import os
-
+from online_policy import min_loss_label
 sys.path.insert(0, '/home/shenzijian/下载/regression-model/regression_model')
-
+sys.path.append("D:\Shen Zijian\Simulator_Broadcasting\Transpotation_Simulator_Manhattan\Transpotation_Simulator-Manhattan\simulator\input\lstm_best_model_matched_ratio.pth")
 
 class Simulator:
     def __init__(self, **kwargs):  # **kwargs 传输不定长度的键值对
@@ -41,6 +41,7 @@ class Simulator:
         self.order_sample_ratio = kwargs['order_sample_ratio']
         self.order_generation_mode = kwargs['order_generation_mode']
         self.request_interval = kwargs['request_interval']
+
 
         # wait cancel
         self.maximum_wait_time_mean = kwargs.pop('maximum_wait_time_mean',
@@ -127,16 +128,24 @@ class Simulator:
 
         # construct driver table
         self.driver_table = sample_all_drivers(self.driver_info, self.t_initial, self.t_end, self.driver_sample_ratio)
-        self.driver_table['target_grid_id'] = self.driver_table['target_grid_id'].values.astype(int)
+        if env_params['change_grid_id'] == True:
+            self.driver_table['target_grid_id'] = self.driver_table.apply(apply_get_zone, axis=1)
+        else:
+            self.driver_table['target_grid_id'] = self.driver_table['target_grid_id'].values.astype(int)
 
         # construct order table
         self.request_databases = deepcopy(self.request_all)  # deepcopy 地址不同的复制，避免变量之间的相互影响
-        # stand_scaler
-        self.stand_scaler = joblib.load('./input/8_stand_scaler.bin')
+
         # grid_based model
         label = env_params['label_name']
         model_name = env_params['model_name']
-        self.grid_model = torch.load(f'./input/{model_name}_{label}.pth')
+        if env_params['model_name'] != 'fixed':
+            device = 'cuda'
+            self.grid_model = torch.jit.load(f'./input/{model_name}_{label}.tjm').to(device)
+            # self.grid_model = torch.jit.load('./input/model.tjm')
+
+            # stand_scaler
+            self.stand_scaler = joblib.load('./input/8_stand_scaler.bin')
         request_list = []
         for i in range(env_params['t_initial'], env_params['t_end']):
             # print('request_all =', self.request_all[i])
@@ -151,6 +160,9 @@ class Simulator:
                        'itinerary_segment_dis_list', 'trip_time', 'designed_reward', 'cancel_prob']
 
         self.requests = pd.DataFrame(request_list, columns=column_name)
+        if env_params['change_grid_id'] == True:
+            self.requests['origin_grid_id'] = self.requests.apply(apply_origin_get_zone, axis=1)
+            self.requests['dest_grid_id'] = self.requests.apply(apply_dest_get_zone, axis=1)
         self.requests['matching_time'] = 0
         self.requests['pickup_end_time'] = 0
         self.requests['delivery_end_time'] = 0
@@ -165,12 +177,17 @@ class Simulator:
         label = env_params['label_name']
         model = env_params['model_name']
         folder_path = f"./experiment_{model}/record/"
-        file_name = f"matched_record_{label}.csv"
+        if model == 'fixed':
+            file_name = f"matched_record_radius_{env_params['broadcasting_scale']}_{env_params['record_time_interval']}.csv"
+        else:
+            file_name = f"matched_record_{label}.csv"
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         self.file_path = os.path.join(folder_path, file_name)
-        self.grid_data.to_csv(self.file_path, mode='a', index=False,
-                              sep=',')  # f"./experiment_{model}/record/train_grid_data_{label}.csv"
+        if env_params['time_period'] == 'morning':
+            self.grid_data.to_csv(self.file_path, mode='a', index=False,
+                                  sep=',')  # f"./experiment_{model}/record/train_grid_data_{label}.csv"
+        # self.lstm_buffer = np.empty([1, 1, 8])
         self.lstm_buffer = np.empty([1, 1, 8])
         self.temp_matched_order = pd.DataFrame(columns=self.request_columns)
         self.temp_all_order = pd.DataFrame(columns=self.request_columns)
@@ -654,7 +671,7 @@ class Simulator:
         :return: None
         """
         next_time = self.time + self.delta_t
-        self.driver_table = driver_online_offline_decision(self.driver_table, next_time)
+        # self.driver_table = driver_online_offline_decision(self.driver_table, next_time)
         return
 
     def update_time(self):
@@ -698,10 +715,12 @@ class Simulator:
 
     def driver_time(self, driver_info_table, temp_all):
         grid_list = temp_all['origin_grid_id'].unique()
+
         for item in grid_list:
             num_all_driver = len(driver_info_table.loc[driver_info_table['grid_id'] == item])
             num_usage_driver = len(driver_info_table.loc[(driver_info_table['grid_id'] == item) & (
                     (driver_info_table['status'] == 1) | (driver_info_table['status'] == 2))])
+            # print(f'num_usage_driver:{num_usage_driver}')
             if len(self.driver_online_time.loc[self.driver_online_time['grid_id'] == item]) == 0:
                 self.driver_online_time.loc[len(self.driver_online_time.index)] = [item, env_params[
                     'delta_t'] * num_all_driver]
@@ -714,7 +733,8 @@ class Simulator:
                     'delta_t'] * num_usage_driver]
             else:
                 self.driver_usage_time.loc[self.driver_usage_time['grid_id'] == item, 'usage_time'] += env_params[
-                                                                                                           'delta_t'] * num_usage_driver
+                                                                                                        'delta_t'] * num_usage_driver
+        # print(self.driver_online_time)
         return
 
     def update_grid_data(self, temp_match, temp_all, wait_info, driver_info):
@@ -723,80 +743,123 @@ class Simulator:
             columns=['time_stamp', 'time_period', 'grid_id', 'num_order', 'num_matched_order', 'num_available_driver',
                      'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price', 'radius',
                      'driver_utilization_rate', 'total_price'])
-        time_stamp = self.time - 30
+        time_stamp = self.time - env_params['record_time_interval']
         time_period = time_period_dict[env_params['time_period']]
         if env_params['model_name'] == 'fixed':
             cur_radius = env_params['broadcasting_scale']
         else:
             cur_radius = env_params['model_name']
-        grid_list = list(range(1, 16))
+        grid_list = list(range(0, env_params['side']**2))
+
         for item in grid_list:
             num_available_driver = len(driver_info.loc[
                                            (driver_info['grid_id'] == item) & (driver_info['status'] == 0) | (
                                                    driver_info['status'] == 4)])
             num_matched_order = len(temp_match.loc[temp_match['origin_grid_id'] == item])
-            num_order = np.average(len(wait_info.loc[wait_info['origin_grid_id'] == item]))
 
+            num_order = np.average(len(wait_info.loc[wait_info['origin_grid_id'] == item]))
+            if num_order ==0 & num_matched_order != 0:
+                print(wait_info.loc[wait_info['origin_grid_id'] == item],len(wait_info.loc[wait_info['origin_grid_id'] == item]),num_order)
             driver_online_time = self.driver_online_time.loc[
                 self.driver_online_time['grid_id'] == item, 'online_time'].values
             driver_usage_time = self.driver_usage_time.loc[
                 self.driver_usage_time['grid_id'] == item, 'usage_time'].values
+
+            if len(temp_all.loc[temp_all['origin_grid_id'] == item, 'pickup_distance'].values) == 0:
+                avg_pickup_distance = 0
+            else:
+                avg_pickup_distance = np.average(
+                    temp_all.loc[temp_all['origin_grid_id'] == item, 'pickup_distance'].values)
+
+            if num_order == 0:
+                avg_price = 0
+            else:
+                avg_price = np.average(wait_info.loc[wait_info['origin_grid_id'] == item, 'weight'].values)
+
             if num_matched_order != 0:
                 avg_matched_pickup_distance = np.average(
                     temp_match.loc[temp_match['origin_grid_id'] == item, 'pickup_distance'].values)
                 avg_matched_price = np.average(temp_match.loc[temp_match['origin_grid_id'] == item, 'weight'].values)
-                avg_price = np.average(temp_all.loc[temp_all['origin_grid_id'] == item, 'reward_units'].values)
-                avg_pickup_distance = np.average(
-                    temp_all.loc[temp_all['origin_grid_id'] == item, 'pickup_distance'].values)
                 total_price = np.sum(temp_match.loc[temp_match['origin_grid_id'] == item, 'weight'].values)
             else:
-                avg_matched_pickup_distance = 0
+                avg_matched_pickup_distance = 100*(num_order+1)
                 avg_matched_price = 0
-                avg_price = 0
-                avg_pickup_distance = 0
                 total_price = 0
 
             if (len(driver_online_time) == 0) & (len(driver_usage_time) == 0):
-                driver_unilization_rate = 0
+                driver_unilization_rate= 0
             elif driver_online_time[0] == 0:
                 driver_unilization_rate = 0
             else:
+                # print(f"driver_usage_time:{driver_usage_time},driver_online_time:{driver_online_time}")
                 driver_unilization_rate = (driver_usage_time / driver_online_time)[0]
             # insert a row
 
             best_reward = 0
-            best_radius = 0
+            best_radius = 1
             if env_params['model_name'] == 'fixed':
                 pass
             elif env_params['model_name'] == 'lstm':
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
                 temp_data = np.array(
                     [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
                      0, num_order], dtype='float32').reshape(1, -1)
                 temp_data = self.stand_scaler.transform(temp_data)
                 temp_data = np.expand_dims(temp_data, axis=0)
-                if len(self.lstm_buffer) < env_params['lstm_dict']['len_seq']:
+                if self.lstm_buffer.shape[1] < env_params['lstm_dict']['len_seq']:
                     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)
+                    print(self.lstm_buffer.shape)
                 else:
                     self.lstm_buffer = np.delete(self.lstm_buffer, 0, axis=1)  # pop out T1
                     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)  # insert T5
                     for radius_ in env_params['radius_list']:
                         self.lstm_buffer[:, :, -2] = radius_
                         input_data = torch.from_numpy(self.lstm_buffer).to(torch.float32).to(device)
-                        print(input_data.size())
+                        # print(input_data.size())
                         outputs = self.grid_model(input_data).item()
+                        # print(f"outputs for radis={radius_}:",outputs)
                         if outputs > best_reward:
                             best_reward = outputs
                             best_radius = radius_
+                    # print(f"best_reward for grid {item} with radius{best_radius}:",best_reward)
                     env_params['grid_radius_dict'][f'{item}'] = best_radius
-            # elif env_params['model_name'] == 'mtl':
-
-            else:
+            elif env_params['model_name'] == 'gcn':
+                    pass
+            elif env_params['model_name'] == 'policy':
                 for radius_ in env_params['radius_list']:
                     data_30s = np.array(
                         [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
                          radius_, num_order], dtype='float32').reshape(1, -1)
 
+                    scaler = MinMaxScaler()
+                    data_30s = scaler.fit_transform(data_30s)
+                    data_30s = torch.from_numpy(data_30s).to('cuda')
+                    outputs = self.grid_model(data_30s).to('cpu').detach().numpy()
+                    outputs = outputs.squeeze()
+                    # if self.lstm_buffer.shape[1] < env_params['lstm_dict']['len_seq']:
+                    #     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)
+                    #     print(self.lstm_buffer.shape)
+                    # else:
+                    #     self.lstm_buffer = np.delete(self.lstm_buffer, 0, axis=1)  # pop out T1
+                    #     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)  # insert T5
+                    if env_params['online_weight_update']:
+                        best_label_index = min_loss_label()
+                        score = outputs[best_label_index]
+                    else:
+                        score = 0
+                        weight_list = env_params['mtl_weights']
+                        for index,_ in enumerate(outputs):
+                            score += weight_list[index]
+                    if score > best_reward:
+                        best_reward = score
+                        best_radius = radius_
+                env_params['grid_radius_dict'][f'{item}'] = best_radius
+            else:
+                for radius_ in env_params['radius_list']:
+                    data_30s = np.array(
+                        [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
+                         radius_, num_order], dtype='float32').reshape(1, -1)
                     data_30s = self.stand_scaler.transform(data_30s)
                     data_30s = torch.from_numpy(data_30s)
                     outputs = np.sum(self.grid_model(data_30s).detach().numpy())
@@ -804,14 +867,11 @@ class Simulator:
                         best_reward = outputs
                         best_radius = radius_
                 env_params['grid_radius_dict'][f'{item}'] = best_radius
-
             temp_grid_data.loc[len(temp_grid_data.index)] = [time_stamp, time_period, item, num_order,
                                                              num_matched_order, num_available_driver,
                                                              avg_matched_pickup_distance,
                                                              avg_matched_price, avg_pickup_distance, avg_price,
                                                              cur_radius, driver_unilization_rate, total_price]
-        lable_name = env_params['label_name']
-        model_name = env_params['model_name']
         temp_grid_data.to_csv(self.file_path, mode='a',
                               index=False, header=False, sep=',')
         self.grid_reset()
@@ -859,11 +919,7 @@ class Simulator:
         # Step 3: bootstrap new orders
         self.order_generation()
         self.driver_time(driver_table, self.temp_all_order)
-        if self.time % 30 == 0:
-            grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
-                                              driver_table)
-            self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
-                                       ignore_index=True)
+
 
         # print('cruise_flag4 =', self.cruise_flag)
         # Step 4: both-rg-cruising and/or repositioning decision
@@ -875,6 +931,11 @@ class Simulator:
 
         # Step 5: update next state for drivers
         self.update_state()
+        if self.time % env_params['record_time_interval'] == 0:
+            grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
+                                              driver_table)
+            self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
+                                       ignore_index=True)
 
         # Step 6： online/offline update()
         self.driver_online_offline_update()

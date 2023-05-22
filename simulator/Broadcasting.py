@@ -55,7 +55,6 @@ def driver_decision(distance, reward, lr_model):
     :param numpyarray: n, price of order
     :return: pandas.DataFrame, the probability of drivers accept the order.
     """
-    print(distance.shape)
     r_dis, c_dis = distance.shape
     temp_ = np.dstack((distance, reward)).reshape(-1, 2)
     result = lr_model.predict_proba(temp_).reshape(r_dis, c_dis, 2)
@@ -197,7 +196,10 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     new_all_requests['time_period'] = env_params['time_period']
     new_all_requests['num_wait_requests'] = num_order
     new_all_requests['num_available_drivers'] = num_driver
-    new_all_requests['radius'] = itemgetter(*order_driver_info['origin_grid_id'].values)(env_params['grid_radius_dict'])
+    if env_params['model_name'] != 'fixed':
+        new_all_requests['radius'] = itemgetter(*order_driver_info['origin_grid_id'].values)(env_params['grid_radius_dict'])
+    else:
+        new_all_requests['radius'] = env_params['broadcasting_scale']
     new_all_requests['match_state'] = 4
     new_all_requests['origin_grid_id'] = order_driver_info['origin_grid_id']
     new_all_requests['pickup_distance'] = dis_array

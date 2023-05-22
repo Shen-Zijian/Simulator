@@ -19,6 +19,7 @@ import random
 from config import *
 from path import *
 import pickle
+from utilities import get_zone,apply_origin_get_zone,apply_dest_get_zone,apply_get_zone
 import sys
 class SimulatorPattern(object):
     def __init__(self, **kwargs):
@@ -29,7 +30,6 @@ class SimulatorPattern(object):
 
         if self.simulator_mode == 'toy_mode':
             self.request_all = pickle.load(open(data_path + self.request_file_name + '.pickle', 'rb'))
-            # print(self.request_all)
             self.driver_info = pickle.load(open(load_path + self.driver_file_name + '.pickle', 'rb')).head(env_params['driver_num'])
             # self.driver_info = self.driver_info.sample(n=env_params['driver_num'])
             # print(self.driver_info)

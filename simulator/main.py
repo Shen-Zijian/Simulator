@@ -3,7 +3,7 @@ import gc
 import numpy
 import pandas as pd
 from Driver_behavour import train_model
-from MLP import MLP_nn
+# from MLP import MLP_nn
 import config
 # from simulator_env import Simulator
 import simulator_env
@@ -41,24 +41,29 @@ if __name__ == "__main__":
     # print("order_info_max", order_info_max)
     # print("driver_state_info_mean", driver_state_info_mean)
     # config.env_params['broadcasting_scale'] = 5
-    radius_list = [1, 2, 3, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10]
-    # radius_list = [6, 7, 8, 9, 10]
+    # radius_list = env_params['radius_list']
+    radius_list = [1]
     lr_model = train_model()
     # mlp_model = MLP_nn()
     mlp_model = None
     # radius_model = MLP_nn()
     # pred_list = [2.601150, 5, 36005, 40.7679674, -73.9682154, 27.7, 8]
     # print('预测结果：', radius_model.predict([pred_list]))
-    time_list = ['morning', 'evening', 'midnight', 'other']
-    time_dict = {'morning': [25200, 32400], 'evening': [61200, 68400], 'midnight': [0, 18000], 'other': [68400, 86400]}
+    time_list = ['morning','evening','midnight', 'other']
+    # time_list = ['other']
+    time_dict = {'morning': [25200, 32400], 'evening': [61200, 68400], 'midnight': [0, 18000], 'other': [84390, 86400]}
+    # label_list = ['fixed_2s']
+    # for item_label in label_list:
     for time_period in time_list:
-        for single_driver_num in driver_num:
+        for cur_radius in radius_list:
+            env_params['broadcasting_scale'] = env_params['model_name'] + env_params['label_name']
+            # env_params['label_name'] = item_label
             env_params['t_initial'] = time_dict[time_period][0]
             env_params['t_end'] = time_dict[time_period][1]
             env_params['time_period'] = time_period
-            train_set_result = pd.DataFrame(columns=['trip_distance', 'wait_time', 'radius', 'reward'])
+            train_set_result = pd.DataFrame(columns=['trip_distance', 'wait_time', 'reward'])
             # for single_max_distance_num in max_distance_num:
-            env_params['driver_num'] = single_driver_num
+            # env_params['driver_num'] = single_driver_num
             # env_params['maximal_pickup_distance'] = single_max_distance_num
             # 每次循环更新环境参数
             simulator = simulator_env.Simulator(**env_params)  # 环境参数输入Simulator
@@ -91,23 +96,23 @@ if __name__ == "__main__":
             #             open(file_path + '/match_and_cacel_' + str(single_driver_num) + '.pickle',
             #                  'wb'))
             temp_set = simulator.cal_reward(simulator.matched_requests)
-            train_set['order_lat'] = simulator.matched_requests['origin_lat']
-            train_set['order_lng'] = simulator.matched_requests['origin_lng']
+            # train_set['order_lat'] = simulator.matched_requests['origin_lat']
+            # train_set['order_lng'] = simulator.matched_requests['origin_lng']
             train_set['order_grid_id'] = simulator.matched_requests['origin_grid_id']
             train_set['wait_time'] = simulator.matched_requests['wait_time']
             train_set['trip_time'] = simulator.matched_requests['trip_time']
             train_set['trip_distance'] = simulator.matched_requests['trip_distance']
             train_set['price'] = simulator.matched_requests['weight']
             train_set['pickup_distance'] = simulator.matched_requests['pickup_distance']
-            # train_set['busy_ratio'] = len(simulator.matched_requests) / driver_num[0]
-            train_set['radius'] = '%s' % config.env_params['broadcasting_scale']
+            train_set['busy_ratio'] = len(simulator.matched_requests) / driver_num[0]
+            # train_set['radius'] = '%s' % config.env_params['broadcasting_scale']
             train_set['reward'] = temp_set
             train_set['time_period'] = time_period
             train_set_result = pd.concat([train_set_result, train_set], axis=0, ignore_index=True)
             # train_set_result.append(train_set,ignore_index=True)
             print(train_set_result)
 
-            train_set_result.to_csv("./experiment/train_random_driver_MLP.csv", mode='a', index=True,
-                                    sep=',')
+        # train_set_result.to_csv("./experiment/matched_data_grid_based_model_matching_rate.csv", mode='a', index=True,
+        #                         sep=',')
 
 

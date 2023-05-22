@@ -11,7 +11,7 @@ env_params = {
     't_initial': 0,
     't_end': 18000,
     'time_period': 'midnight',
-    'delta_t': 5,  # s
+    'delta_t': 2,  # s
     'vehicle_speed': 22.788,  # km / h
     'repo_speed': 1,  # 目前的设定需要与vehicl speed保持一致
     'order_sample_ratio': 0.5,
@@ -19,10 +19,16 @@ env_params = {
     'driver_sample_ratio': 1,
     'maximum_wait_time_mean': 300,
     'maximum_wait_time_std': 0,
-    'radius_list': [1, 2, 3, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10],
-    'grid_radius_dict': {1: 2.5, 2: 2.5, 3: 2.5, 4: 2.5, 5: 2.5, 6: 2.5, 7: 2.5, 8: 2.5, 9: 2.5,
+    'radius_list': [0.5, 1, 2, 3, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    'grid_radius_dict': {0: 2.5, 1: 2.5, 2: 2.5, 3: 2.5, 4: 2.5, 5: 2.5, 6: 2.5, 7: 2.5, 8: 2.5, 9: 2.5,
                          10: 2.5,
                          11: 2.5, 12: 2.5, 13: 2.5, 14: 2.5, 15: 2.5, 16: 2.5},
+    'model_name': 'policy',  # lstm,fixed,mlp,lr,mtl
+    'online_weight_update': False,  # for policy choose one label with minimum loss or sum all 3 labels
+    'mtl_weights' : [1,1,1],
+    'lstm_dict': {'len_seq': 10},
+    'record_time_interval': 30,  # saving grida data interval
+    'label_name': 'es_best_30s',
     # "maximum_pickup_time_passenger_can_tolerate_mean":200,  # s
     "maximum_pickup_time_passenger_can_tolerate_mean": PICKUP_TIME_MEAN,
     "maximum_pickup_time_passenger_can_tolerate_std": PICKUP_TIME_STD,  # s
@@ -30,7 +36,7 @@ env_params = {
     "maximum_price_passenger_can_tolerate_std": PRICE_STD,  # ￥
     'maximal_pickup_distance': 20,  # km
     'broadcasting_scale': 2.5,
-    'request_interval': 5,  #
+    'request_interval': 2,  #
     'cruise_flag': CRUISE,
     'delivery_mode': 'rg',
     'pickup_mode': 'rg',
@@ -51,6 +57,7 @@ env_params = {
     'experiment_mode': 'test',
     'driver_num': 500,
     'side': 4,
+    'change_grid_id': True,
     'price_per_km': 5,  # ￥ / km
     'road_information_mode': 'load',
     'north_lat': 40.8845,
