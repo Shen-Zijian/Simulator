@@ -2,7 +2,7 @@
 # from socket import if_indextoname
 import numpy
 from Driver_behavour import train_model
-from MLP import MLP_nn
+# from MLP import MLP_nn
 import numpy as np
 from copy import deepcopy
 import random
@@ -35,20 +35,19 @@ time_params_dict = {'morning': [2.582, 2.491, 0.026, 1.808, 2.581],
                     'other': [0, 2.017, 2.978, 2.764, 2.973]}
 
 wait_time_params_dict = {'morning': [1.877, 2.018, 2.691, 1.865, 6.683],
-                    'evening': [2.673,2.049,2.497,1.736,9.208],
-                    'midnight_early': [3.589,2.319,2.185,1.664,9.6],
-                    'other': [0,1.886,4.099,3.185,3.636]}
+                         'evening': [2.673, 2.049, 2.497, 1.736, 9.208],
+                         'midnight_early': [3.589, 2.319, 2.185, 1.664, 9.6],
+                         'other': [0, 1.886, 4.099, 3.185, 3.636]}
 
-price_params_dict = {'short': [1.245,0.599,10.629,10.305,0.451],
-                    'short_medium': [0.451,0.219,19.585,58.407,0.18],
-                    'medium_long': [14.411,4.421,11.048,9.228,145],
-                    'long': [15.821,3.409,0,16.221,838.587]}
+price_params_dict = {'short': [1.245, 0.599, 10.629, 10.305, 0.451],
+                     'short_medium': [0.451, 0.219, 19.585, 58.407, 0.18],
+                     'medium_long': [14.411, 4.421, 11.048, 9.228, 145],
+                     'long': [15.821, 3.409, 0, 16.221, 838.587]}
 
-price_increase_params_dict = {'morning': [0.001,1.181,3.583,4.787,0.001],
-                    'evening': [0,1.21,2.914,5.023,0.013],
-                    'midnight_early': [1.16,0,0,6.366,0],
-                    'other': [0,2.053,0.857,4.666,1.961]}
-
+price_increase_params_dict = {'morning': [0.001, 1.181, 3.583, 4.787, 0.001],
+                              'evening': [0, 1.21, 2.914, 5.023, 0.013],
+                              'midnight_early': [1.16, 0, 0, 6.366, 0],
+                              'other': [0, 2.053, 0.857, 4.666, 1.961]}
 
 G = ox.load_graphml('./input/graph.graphml')
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
@@ -77,6 +76,18 @@ myclient = pymongo.MongoClient("mongodb://localhost:27017")
 mydb = myclient["route_network"]
 
 mycollect = mydb['route_list']
+
+
+def apply_origin_get_zone(row):
+    return get_zone(row['origin_lat'], row['origin_lng'])
+
+
+def apply_dest_get_zone(row):
+    return get_zone(row['dest_lat'], row['dest_lng'])
+
+
+def apply_get_zone(row):
+    return get_zone(row['lat'], row['lng'])
 
 
 # define the function to get zone_id of segment node
@@ -139,6 +150,13 @@ def distance(coord_1, coord_2):
     manhattan_dis = abs(lat_dis) + abs(lon_dis)
 
     return manhattan_dis
+
+
+def calculate_weight(row):
+    if row['trip_distance'] > 7:
+        return 27 + 1.9 * int(max(0, row['trip_distance'] * 100 - 2000) / 200)
+    else:
+        return 93.5 + 1.3 * (row['trip_distance'] * 1888 - 788) / 208
 
 
 def distance_array(coord_1, coord_2):
@@ -518,7 +536,7 @@ def skewed_normal_distribution(u, thegma, k, omega, a, input_num):
 
 
 def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dispatch_method='LD',
-                   lr_model=train_model(), mlp_model=None,cur_time=0):
+                   lr_model=train_model(), mlp_model=None, cur_time=0):
     """
     :param wait_requests: the requests of orders
     :type wait_requests: pandas.DataFrame
@@ -537,14 +555,17 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
     num_idle_driver = idle_driver_table.shape[0]
     matched_pair_actual_indexs = []
     matched_itinerary = []
-    new_all_requests = pd.DataFrame(columns=['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
-                    'pick_up_distance','time','time_period','num_wait_requests','num_available_drivers','radius','match_state'])
+    new_all_requests = pd.DataFrame(
+        columns=['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
+                 'pick_up_distance', 'time', 'time_period', 'num_wait_requests', 'num_available_drivers', 'radius',
+                 'match_state'])
     if num_wait_request > 0 and num_idle_driver > 0:
         if dispatch_method == 'LD':
             # generate order driver pairs and corresponding itinerary
             # print(wait_requests.columns)
             request_array_temp = wait_requests.loc[:,
                                  ['origin_lng', 'origin_lat', 'order_id', 'weight', 'origin_grid_id']]  # loc取列
+
             request_array = np.repeat(request_array_temp.values, num_idle_driver,
                                       axis=0)  # 复制(input_array,repeat_num,axis)
             driver_loc_array_temp = idle_driver_table.loc[:, ['lng', 'lat', 'driver_id']]
@@ -563,8 +584,9 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
             # if len(flag) > 0:
             #     order_driver_pair = np.vstack(
             #         [request_array[flag, 2], driver_loc_array[flag, 2], request_array[flag, 3], dis_array[flag]]).T
-            matched_pair_actual_indexs,new_all_requests = Broadcasting.dispatch_broadcasting(order_driver_pair.tolist(), dis_array,
-                                                                            lr_model, mlp_model,cur_time,driver_table)
+            matched_pair_actual_indexs, new_all_requests = Broadcasting.dispatch_broadcasting(
+                order_driver_pair.tolist(), dis_array,
+                lr_model, mlp_model, cur_time, driver_table)
             # matched_pair_actual_indexs = LD(order_driver_pair.tolist())
             if len(matched_pair_actual_indexs) == 0:
                 return [], [], new_all_requests
@@ -598,7 +620,25 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
 
 def driver_online_offline_decision(driver_table, current_time):
     # 注意pickup和delivery driver不应当下线
+    # 车辆状态：0 cruise (park 或正在cruise)， 1 表示delivery，2 pickup, 3 表示下线, 4 reposition
+    # This function is aimed to switch the driver states between 0 and 3, based on the 'start_time' and 'end_time' of drivers
+    # Notice that we should not change the state of delievery and pickup drivers, since they are occopied.
+
+    online_driver_table = driver_table.loc[
+        (driver_table['start_time'] <= current_time) & (driver_table['end_time'] >= current_time)]
+    offline_driver_table = driver_table.loc[
+        (driver_table['start_time'] > current_time) | (driver_table['end_time'] < current_time)]
+
+    online_driver_table = online_driver_table.loc[
+        (online_driver_table['status'] != 1) | (online_driver_table['status'] != 2)]
+    offline_driver_table = offline_driver_table.loc[
+        (offline_driver_table['status'] != 1) | (offline_driver_table['status'] != 2)]
+    # print(f'online count: {len(online_driver_table)}, offline count: {len(offline_driver_table)}, total count: {len(driver_table)}')
     new_driver_table = driver_table
+    new_driver_table.loc[new_driver_table.isin(online_driver_table.to_dict('list')).all(axis=1), 'status'] = 0
+    new_driver_table.loc[new_driver_table.isin(offline_driver_table.to_dict('list')).all(axis=1), 'status'] = 3
+    print("hi", new_driver_table.loc[new_driver_table['status'] == 1])
+    # return new_driver_table
     return new_driver_table
 
 

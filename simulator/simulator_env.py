@@ -113,6 +113,7 @@ class Simulator:
         self.driver_info = pattern.driver_info
         self.driver_info['grid_id'] = self.driver_info['grid_id'].values.astype(int)
         self.request_all = pattern.request_all
+
         self.request_databases = None
         self.request_database = None
         self.driver_online_time = pd.DataFrame(columns=['grid_id', 'online_time'])
@@ -348,6 +349,7 @@ class Simulator:
             database_size = len(temp_request)
             # sample a portion of historical orders
             num_request = int(np.rint(self.order_sample_ratio * database_size))
+            print("num_request:",num_request,"database_size",database_size)
             if num_request <= database_size:
                 sampled_request_index = np.random.choice(database_size, num_request, replace=False).tolist()
                 sampled_requests = [temp_request[index] for index in sampled_request_index]
@@ -398,8 +400,7 @@ class Simulator:
                 #                                                   self.maximum_wait_time_std, len(wait_info))
                 wait_info['maximum_wait_time'] = self.maximum_wait_time_mean
                 wait_info['itinerary_segment_dis_list'] = itinerary_segment_dis_list
-                wait_info['weight'] = wait_info['trip_distance'] * 5
-                # add extra info of orders
+                wait_info['weight'] = wait_info.apply(calculate_weight, axis=1)                # add extra info of orders
                 # 添加分布  价格高的删除
                 wait_info['maximum_price_passenger_can_tolerate'] = np.random.normal(
                     env_params['maximum_price_passenger_can_tolerate_mean'],
@@ -900,7 +901,11 @@ class Simulator:
                                                                                                        lr_model,
                                                                                                        mlp_model,
                                                                                                        self.time)
-
+            if self.time % env_params['record_time_interval'] == 0:
+                grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
+                                                  driver_table)
+                self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
+                                           ignore_index=True)
             # print(matched_pair_actual_indexes)
             df_new_matched_requests, df_update_wait_requests = self.update_info_after_matching_multi_process(
                 matched_pair_actual_indexes, matched_itinerary)
@@ -931,11 +936,7 @@ class Simulator:
 
         # Step 5: update next state for drivers
         self.update_state()
-        if self.time % env_params['record_time_interval'] == 0:
-            grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
-                                              driver_table)
-            self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
-                                       ignore_index=True)
+
 
         # Step 6： online/offline update()
         self.driver_online_offline_update()

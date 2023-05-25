@@ -23,7 +23,7 @@ env_params = {
     'grid_radius_dict': {0: 2.5, 1: 2.5, 2: 2.5, 3: 2.5, 4: 2.5, 5: 2.5, 6: 2.5, 7: 2.5, 8: 2.5, 9: 2.5,
                          10: 2.5,
                          11: 2.5, 12: 2.5, 13: 2.5, 14: 2.5, 15: 2.5, 16: 2.5},
-    'model_name': 'policy',  # lstm,fixed,mlp,lr,mtl
+    'model_name': 'fixed',  # lstm,fixed,mlp,lr,mtl
     'online_weight_update': False,  # for policy choose one label with minimum loss or sum all 3 labels
     'mtl_weights' : [1,1,1],
     'lstm_dict': {'len_seq': 10},
@@ -35,7 +35,7 @@ env_params = {
     "maximum_price_passenger_can_tolerate_mean": PRICE_MEAN,  # ￥
     "maximum_price_passenger_can_tolerate_std": PRICE_STD,  # ￥
     'maximal_pickup_distance': 20,  # km
-    'broadcasting_scale': 2.5,
+    'broadcasting_scale': 1,
     'request_interval': 2,  #
     'cruise_flag': CRUISE,
     'delivery_mode': 'rg',
@@ -48,8 +48,8 @@ env_params = {
     'track_recording_flag': True,
     'driver_far_matching_cancel_prob_file': 'driver_far_matching_cancel_prob',
     'input_file_path': 'input/dataset.csv',
-    'request_file_name': 'input/order',  # 'toy_requests',
-    'driver_file_name': 'input/driver_info',
+    'request_file_name': 'input/hongkong_processed_order',  # 'toy_requests',
+    'driver_file_name': 'input/hongkong_driver_info',
     'road_network_file_name': 'road_network_information.pickle',
     'dispatch_method': 'LD',  # LD: lagarange decomposition method designed by Peibo Duan
     'method': 'instant_reward_no_subway',
