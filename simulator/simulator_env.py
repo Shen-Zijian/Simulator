@@ -6,17 +6,17 @@ import pandas as pd
 import sys
 import config
 from simulator_pattern import *
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from utilities import *
 import joblib
-import torch
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 import sys
 import torch
 import os
-from online_policy import min_loss_label
+import model
+import pickle
 sys.path.insert(0, '/home/shenzijian/下载/regression-model/regression_model')
-sys.path.append("D:\Shen Zijian\Simulator_Broadcasting\Transpotation_Simulator_Manhattan\Transpotation_Simulator-Manhattan\simulator\input\lstm_best_model_matched_ratio.pth")
+
 
 class Simulator:
     def __init__(self, **kwargs):  # **kwargs 传输不定长度的键值对
@@ -41,7 +41,6 @@ class Simulator:
         self.order_sample_ratio = kwargs['order_sample_ratio']
         self.order_generation_mode = kwargs['order_generation_mode']
         self.request_interval = kwargs['request_interval']
-
 
         # wait cancel
         self.maximum_wait_time_mean = kwargs.pop('maximum_wait_time_mean',
@@ -96,6 +95,8 @@ class Simulator:
                                 'itinerary_segment_dis_list', 'trip_time', 'cancel_prob', 't_matched',
                                 'pickup_time', 'wait_time', 't_end', 'status', 'driver_id', 'maximum_wait_time',
                                 'pickup_distance']
+        self.temp_all_columns = ['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
+                    'pick_up_distance','time','time_period','num_wait_requests','num_available_drivers','radius','match_state']
 
         self.wait_requests = None
         self.matched_requests = None
@@ -112,8 +113,9 @@ class Simulator:
         # order and driver databases
         self.driver_info = pattern.driver_info
         self.driver_info['grid_id'] = self.driver_info['grid_id'].values.astype(int)
+        self.driver_info['num_attend'] = 0
+        self.driver_info['num_accepted'] = 0
         self.request_all = pattern.request_all
-
         self.request_databases = None
         self.request_database = None
         self.driver_online_time = pd.DataFrame(columns=['grid_id', 'online_time'])
@@ -129,24 +131,20 @@ class Simulator:
 
         # construct driver table
         self.driver_table = sample_all_drivers(self.driver_info, self.t_initial, self.t_end, self.driver_sample_ratio)
-        if env_params['change_grid_id'] == True:
-            self.driver_table['target_grid_id'] = self.driver_table.apply(apply_get_zone, axis=1)
-        else:
-            self.driver_table['target_grid_id'] = self.driver_table['target_grid_id'].values.astype(int)
+        self.driver_table['target_grid_id'] = self.driver_table['target_grid_id'].values.astype(int)
 
         # construct order table
         self.request_databases = deepcopy(self.request_all)  # deepcopy 地址不同的复制，避免变量之间的相互影响
-
+        # stand_scaler
+        self.stand_scaler = joblib.load('./input/8_stand_scaler.bin')
         # grid_based model
         label = env_params['label_name']
         model_name = env_params['model_name']
         if env_params['model_name'] != 'fixed':
-            device = 'cuda'
-            self.grid_model = torch.jit.load(f'./input/{model_name}_{label}.tjm').to(device)
-            # self.grid_model = torch.jit.load('./input/model.tjm')
-
-            # stand_scaler
-            self.stand_scaler = joblib.load('./input/8_stand_scaler.bin')
+            # self.grid_model = torch.load(f'./input/{model_name}_{label}.pth')
+            self.grid_model = torch.jit.load(f'./input/{model_name}_{label}.tjm')
+        else:
+            self.grid_model = None
         request_list = []
         for i in range(env_params['t_initial'], env_params['t_end']):
             # print('request_all =', self.request_all[i])
@@ -159,11 +157,14 @@ class Simulator:
         column_name = ['order_id', 'origin_id', 'origin_lat', 'origin_lng', 'dest_id', 'dest_lat', 'dest_lng',
                        'trip_distance', 'start_time', 'origin_grid_id', 'dest_grid_id', 'itinerary_node_list',
                        'itinerary_segment_dis_list', 'trip_time', 'designed_reward', 'cancel_prob']
+        # column_hongkong = ['driver_id', 'start_time', 'end_time', 'lng', 'lat', 'node_id', 'grid_id', 'status',
+        #            'target_loc_lng', 'target_loc_lat', 'target_node_id', 'target_grid_id', 'remaining_time',
+        #            'matched_order_id', 'total_idle_time', 'time_to_last_cruising', 'current_road_node_index',
+        #            'remaining_time_for_current_node', 'itinerary_node_list', 'itinerary_segment_dis_list']
 
+        # print(request_list[0])
+        # request_list = [sublist[:-1] for sublist in request_list]
         self.requests = pd.DataFrame(request_list, columns=column_name)
-        if env_params['change_grid_id'] == True:
-            self.requests['origin_grid_id'] = self.requests.apply(apply_origin_get_zone, axis=1)
-            self.requests['dest_grid_id'] = self.requests.apply(apply_dest_get_zone, axis=1)
         self.requests['matching_time'] = 0
         self.requests['pickup_end_time'] = 0
         self.requests['delivery_end_time'] = 0
@@ -173,13 +174,13 @@ class Simulator:
                              'num_available_driver',
                              'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price',
                              'radius',
-                             'driver_utilization_rate', 'total_matched_price']
+                             'driver_utilization_rate', 'total_matched_price','num_attend','num_accepted','doar']
         self.grid_data = pd.DataFrame(columns=grid_data_columns)
         label = env_params['label_name']
         model = env_params['model_name']
         folder_path = f"./experiment_{model}/record/"
         if model == 'fixed':
-            file_name = f"matched_record_radius_{env_params['broadcasting_scale']}_{env_params['record_time_interval']}.csv"
+            file_name = f"matched_record_radius_{env_params['broadcasting_scale']}.csv"
         else:
             file_name = f"matched_record_{label}.csv"
         if not os.path.exists(folder_path):
@@ -187,7 +188,7 @@ class Simulator:
         self.file_path = os.path.join(folder_path, file_name)
         if env_params['time_period'] == 'morning':
             self.grid_data.to_csv(self.file_path, mode='a', index=False,
-                                  sep=',')  # f"./experiment_{model}/record/train_grid_data_{label}.csv"
+                                  sep=',')  # f"./experiment_{model}/record/train_grid_
         # self.lstm_buffer = np.empty([1, 1, 8])
         self.lstm_buffer = np.empty([1, 1, 8])
         self.temp_matched_order = pd.DataFrame(columns=self.request_columns)
@@ -235,8 +236,9 @@ class Simulator:
             cor_driver = []
             for i in range(len(matched_pair_index_df)):
                 cor_order.append(np.argwhere(order_array == matched_pair_index_df['order_id'][i])[0][0])
-                cor_driver.append(
-                    idle_driver_table[idle_driver_table['driver_id'] == matched_pair_index_df['driver_id'][i]].index[0])
+                filtered_df = idle_driver_table[idle_driver_table['driver_id'] == matched_pair_index_df['driver_id'][i]]
+                if not filtered_df.empty:
+                    cor_driver.append(idle_driver_table[idle_driver_table['driver_id'] == matched_pair_index_df['driver_id'][i]].index[0])
             cor_driver = np.array(cor_driver)
             df_matched = df_matched.iloc[cor_order, :]
             # driver decide whether cancelled
@@ -259,6 +261,7 @@ class Simulator:
 
             # driver after cancelled
             # 若匹配上后又被取消，目前假定司机按原计划继续cruising or repositioning
+
             self.driver_table.loc[cor_driver[~con_remain], ['status', 'remaining_time', 'total_idle_time']] = 0
 
             # order not cancelled
@@ -349,11 +352,9 @@ class Simulator:
             database_size = len(temp_request)
             # sample a portion of historical orders
             num_request = int(np.rint(self.order_sample_ratio * database_size))
-            print("num_request:",num_request,"database_size",database_size)
             if num_request <= database_size:
                 sampled_request_index = np.random.choice(database_size, num_request, replace=False).tolist()
                 sampled_requests = [temp_request[index] for index in sampled_request_index]
-
             # generate complete information for new orders
 
             column_name = ['order_id', 'origin_id', 'origin_lat', 'origin_lng', 'dest_id', 'dest_lat', 'dest_lng',
@@ -364,8 +365,10 @@ class Simulator:
                 itinerary_segment_dis_list = []
                 itinerary_node_list = np.array(sampled_requests)[:, 11]
                 trip_distance = []
+
                 # trip_distance = npSS.array(sampled_requests)[:, 7]
                 for k, itinerary_node in enumerate(itinerary_node_list):
+
                     try:
                         itinerary_segment_dis = []
                         # route generation
@@ -389,7 +392,6 @@ class Simulator:
                 #     if len(itinerary_node_list[j]) == len(itinerary_segment_dis_list[j]):
                 #         continue
                 #     itinerary_node_list[j].pop()
-
                 wait_info = pd.DataFrame(sampled_requests, columns=column_name)
                 wait_info['itinerary_node_list'] = itinerary_node_list
                 wait_info['start_time'] = self.time
@@ -400,7 +402,9 @@ class Simulator:
                 #                                                   self.maximum_wait_time_std, len(wait_info))
                 wait_info['maximum_wait_time'] = self.maximum_wait_time_mean
                 wait_info['itinerary_segment_dis_list'] = itinerary_segment_dis_list
-                wait_info['weight'] = wait_info.apply(calculate_weight, axis=1)                # add extra info of orders
+                # wait_info['weight'] = wait_info['trip_distance'] * 5
+                wait_info['weight'] = wait_info.apply(calculate_weight, axis=1)
+                # add extra info of orders
                 # 添加分布  价格高的删除
                 wait_info['maximum_price_passenger_can_tolerate'] = np.random.normal(
                     env_params['maximum_price_passenger_can_tolerate_mean'],
@@ -413,7 +417,13 @@ class Simulator:
                     env_params['maximum_pickup_time_passenger_can_tolerate_mean'],
                     env_params['maximum_pickup_time_passenger_can_tolerate_std'],
                     len(wait_info))
-
+                # wait_info = wait_info.loc[
+                #     (wait_info['origin_lng'] > 114.13) & (wait_info['origin_lng'] < 114.235) & (
+                #                 wait_info['origin_lat'] < 22.285) & (wait_info['origin_lat'] > 22.23)&(wait_info['dest_lng'] > 114.13) & (wait_info['dest_lng'] < 114.235) & (
+                #             wait_info['dest_lat'] < 22.285) & (wait_info['dest_lat'] > 22.23)]
+                if not wait_info.empty:
+                    wait_info['origin_grid_id'] = wait_info.apply(lambda row: get_zone(row['origin_lat'], row['origin_lng']),axis=1)
+                    wait_info['dest_grid_id'] = wait_info.apply(lambda row: get_zone(row['dest_lat'], row['dest_lng']),axis=1)
                 # wait_info = wait_info.drop(columns=['trip_distance'])
                 # wait_info = wait_info.drop(columns=['designed_reward'])
                 self.wait_requests = pd.concat([self.wait_requests, wait_info], ignore_index=True)
@@ -672,7 +682,7 @@ class Simulator:
         :return: None
         """
         next_time = self.time + self.delta_t
-        # self.driver_table = driver_online_offline_decision(self.driver_table, next_time)
+        self.driver_table = driver_online_offline_decision(self.driver_table, next_time)
         return
 
     def update_time(self):
@@ -716,9 +726,24 @@ class Simulator:
 
     def driver_time(self, driver_info_table, temp_all):
         grid_list = temp_all['origin_grid_id'].unique()
+        filtered_order_driver_info = temp_all.loc[
+            (temp_all['match_state'] == 1) | (temp_all['match_state'] == 4)]
 
+        # 检查 driver_info 中的 driver_id 是否出现在 filtered_order_driver_info 中
+        self.driver_table['accepted_state'] = self.driver_table['driver_id'].isin(filtered_order_driver_info['driver_id'])
+        # 如果 driver_id 出现在 filtered_order_driver_info 中，将 num_accept 的值加 1，否则保持不变
+        self.driver_table['num_accepted'] = self.driver_table.apply(
+            lambda row: row['num_accepted'] + 1 if row['accepted_state'] else row['num_accepted'], axis=1)
+        # 删除辅助列
+        self.driver_table.drop('accepted_state', axis=1, inplace=True)
+        self.driver_table['in_order_driver_info'] = self.driver_table['driver_id'].isin(temp_all['driver_id'])
+        # 如果 order_id 出现在 order_driver_info 中，将 num_attend 的值加 1，否则保持不变
+        self.driver_table['num_attend'] = self.driver_table.apply(
+            lambda row: row['num_attend'] + 1 if row['in_order_driver_info'] else row['num_attend'], axis=1)
+        # 删除辅助列
+        self.driver_table.drop('in_order_driver_info', axis=1, inplace=True)
         for item in grid_list:
-            num_all_driver = len(driver_info_table.loc[driver_info_table['grid_id'] == item])
+            num_all_driver = len(driver_info_table.loc[(driver_info_table['grid_id'] == item)&(driver_info_table['status'] != 3)])
             num_usage_driver = len(driver_info_table.loc[(driver_info_table['grid_id'] == item) & (
                     (driver_info_table['status'] == 1) | (driver_info_table['status'] == 2))])
             # print(f'num_usage_driver:{num_usage_driver}')
@@ -734,8 +759,7 @@ class Simulator:
                     'delta_t'] * num_usage_driver]
             else:
                 self.driver_usage_time.loc[self.driver_usage_time['grid_id'] == item, 'usage_time'] += env_params[
-                                                                                                        'delta_t'] * num_usage_driver
-        # print(self.driver_online_time)
+                                                                                              'delta_t'] * num_usage_driver
         return
 
     def update_grid_data(self, temp_match, temp_all, wait_info, driver_info):
@@ -743,8 +767,8 @@ class Simulator:
         temp_grid_data = pd.DataFrame(
             columns=['time_stamp', 'time_period', 'grid_id', 'num_order', 'num_matched_order', 'num_available_driver',
                      'avg_matched_pickup_distance', 'avg_matched_price', 'avg_pickup_distance', 'avg_price', 'radius',
-                     'driver_utilization_rate', 'total_price'])
-        time_stamp = self.time - env_params['record_time_interval']
+                     'driver_utilization_rate', 'total_price','num_attend','num_accepted','doar'])
+        time_stamp = self.time
         time_period = time_period_dict[env_params['time_period']]
         if env_params['model_name'] == 'fixed':
             cur_radius = env_params['broadcasting_scale']
@@ -759,13 +783,19 @@ class Simulator:
             num_matched_order = len(temp_match.loc[temp_match['origin_grid_id'] == item])
 
             num_order = np.average(len(wait_info.loc[wait_info['origin_grid_id'] == item]))
-            if num_order ==0 & num_matched_order != 0:
-                print(wait_info.loc[wait_info['origin_grid_id'] == item],len(wait_info.loc[wait_info['origin_grid_id'] == item]),num_order)
             driver_online_time = self.driver_online_time.loc[
                 self.driver_online_time['grid_id'] == item, 'online_time'].values
             driver_usage_time = self.driver_usage_time.loc[
                 self.driver_usage_time['grid_id'] == item, 'usage_time'].values
+            # print(self.driver_table.loc[self.driver_table['grid_id'] == item, ('num_attend','num_accepted')])
+            num_attend = np.sum(self.driver_table.loc[self.driver_table['grid_id'] == item, 'num_attend'].values)
+            num_accepted = np.sum(self.driver_table.loc[self.driver_table['grid_id'] == item, 'num_accepted'].values)
 
+            # print(num_attend,num_accepted)
+            if num_attend != 0:
+                doar = num_accepted/num_attend
+            else:
+                doar = 0
             if len(temp_all.loc[temp_all['origin_grid_id'] == item, 'pickup_distance'].values) == 0:
                 avg_pickup_distance = 0
             else:
@@ -810,7 +840,6 @@ class Simulator:
                 temp_data = np.expand_dims(temp_data, axis=0)
                 if self.lstm_buffer.shape[1] < env_params['lstm_dict']['len_seq']:
                     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)
-                    print(self.lstm_buffer.shape)
                 else:
                     self.lstm_buffer = np.delete(self.lstm_buffer, 0, axis=1)  # pop out T1
                     self.lstm_buffer = np.concatenate((self.lstm_buffer, temp_data), axis=1)  # insert T5
@@ -832,9 +861,8 @@ class Simulator:
                     data_30s = np.array(
                         [time_stamp, time_period, item, num_available_driver, avg_pickup_distance, avg_price,
                          radius_, num_order], dtype='float32').reshape(1, -1)
-
-                    scaler = MinMaxScaler()
-                    data_30s = scaler.fit_transform(data_30s)
+                    scaler = pickle.load(open('./input/standard_scaler_hongkong.pkl','rb'))
+                    data_30s = scaler.transform(data_30s)
                     data_30s = torch.from_numpy(data_30s).to('cuda')
                     outputs = self.grid_model(data_30s).to('cpu').detach().numpy()
                     outputs = outputs.squeeze()
@@ -872,7 +900,7 @@ class Simulator:
                                                              num_matched_order, num_available_driver,
                                                              avg_matched_pickup_distance,
                                                              avg_matched_price, avg_pickup_distance, avg_price,
-                                                             cur_radius, driver_unilization_rate, total_price]
+                                                             cur_radius, driver_unilization_rate, total_price,num_attend,num_accepted,doar]
         temp_grid_data.to_csv(self.file_path, mode='a',
                               index=False, header=False, sep=',')
         self.grid_reset()
@@ -895,21 +923,21 @@ class Simulator:
         # print('cruise_flag2 =', self.cruise_flag)
         if order_dispatch(wait_requests, driver_table, self.maximal_pickup_distance, self.dispatch_method) is not None:
             matched_pair_actual_indexes, matched_itinerary, new_match_cancel_requests = order_dispatch(wait_requests,
-                                                                                                       driver_table,
+                                                                                                       self.driver_table,
                                                                                                        self.maximal_pickup_distance,
                                                                                                        self.dispatch_method,
                                                                                                        lr_model,
                                                                                                        mlp_model,
-                                                                                                       self.time)
+                                                                                                   self.time)
             if self.time % env_params['record_time_interval'] == 0:
                 grid_data = self.update_grid_data(self.temp_matched_order, self.temp_all_order, self.total_order,
                                                   driver_table)
                 self.grid_data = pd.concat([self.grid_data, grid_data], axis=0,
                                            ignore_index=True)
+
             # print(matched_pair_actual_indexes)
             df_new_matched_requests, df_update_wait_requests = self.update_info_after_matching_multi_process(
                 matched_pair_actual_indexes, matched_itinerary)
-            # print(df_new_matched_requests[['order_id','driver_id','pickup_distance']])
             self.matched_requests = pd.concat([self.matched_requests, df_new_matched_requests], axis=0,
                                               ignore_index=True)
             self.temp_matched_order = pd.concat([self.temp_matched_order, df_new_matched_requests], axis=0,
@@ -919,12 +947,10 @@ class Simulator:
 
             self.wait_requests = df_update_wait_requests.reset_index(drop=True)
             self.matched_requests = self.matched_requests.reset_index(drop=True)
-
+            self.driver_time(driver_table, self.temp_all_order)
         # print('cruise_flag3 =', self.cruise_flag)
         # Step 3: bootstrap new orders
         self.order_generation()
-        self.driver_time(driver_table, self.temp_all_order)
-
 
         # print('cruise_flag4 =', self.cruise_flag)
         # Step 4: both-rg-cruising and/or repositioning decision
@@ -933,7 +959,6 @@ class Simulator:
         # Step 4.1: track recording
         if self.track_recording_flag:
             self.real_time_track_recording()
-
         # Step 5: update next state for drivers
         self.update_state()
 

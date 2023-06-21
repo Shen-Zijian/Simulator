@@ -35,21 +35,22 @@ time_params_dict = {'morning': [2.582, 2.491, 0.026, 1.808, 2.581],
                     'other': [0, 2.017, 2.978, 2.764, 2.973]}
 
 wait_time_params_dict = {'morning': [1.877, 2.018, 2.691, 1.865, 6.683],
-                         'evening': [2.673, 2.049, 2.497, 1.736, 9.208],
-                         'midnight_early': [3.589, 2.319, 2.185, 1.664, 9.6],
-                         'other': [0, 1.886, 4.099, 3.185, 3.636]}
+                    'evening': [2.673,2.049,2.497,1.736,9.208],
+                    'midnight_early': [3.589,2.319,2.185,1.664,9.6],
+                    'other': [0,1.886,4.099,3.185,3.636]}
 
-price_params_dict = {'short': [1.245, 0.599, 10.629, 10.305, 0.451],
-                     'short_medium': [0.451, 0.219, 19.585, 58.407, 0.18],
-                     'medium_long': [14.411, 4.421, 11.048, 9.228, 145],
-                     'long': [15.821, 3.409, 0, 16.221, 838.587]}
+price_params_dict = {'short': [1.245,0.599,10.629,10.305,0.451],
+                    'short_medium': [0.451,0.219,19.585,58.407,0.18],
+                    'medium_long': [14.411,4.421,11.048,9.228,145],
+                    'long': [15.821,3.409,0,16.221,838.587]}
 
-price_increase_params_dict = {'morning': [0.001, 1.181, 3.583, 4.787, 0.001],
-                              'evening': [0, 1.21, 2.914, 5.023, 0.013],
-                              'midnight_early': [1.16, 0, 0, 6.366, 0],
-                              'other': [0, 2.053, 0.857, 4.666, 1.961]}
+price_increase_params_dict = {'morning': [0.001,1.181,3.583,4.787,0.001],
+                    'evening': [0,1.21,2.914,5.023,0.013],
+                    'midnight_early': [1.16,0,0,6.366,0],
+                    'other': [0,2.053,0.857,4.666,1.961]}
 
-G = ox.load_graphml('./input/graph.graphml')
+
+G = ox.load_graphml('./input/hongkong_updated.graphml')
 gdf_nodes, gdf_edges = ox.graph_to_gdfs(G)
 lat_list = gdf_nodes['y'].tolist()
 lng_list = gdf_nodes['x'].tolist()
@@ -60,12 +61,6 @@ for i in range(len(lat_list)):
     node_id_to_lat_lng[node_id[i]] = (lat_list[i], lng_list[i])
     node_coord_to_id[(lat_list[i], lng_list[i])] = node_id[i]
 
-center = (
-    (env_params['east_lng'] + env_params['west_lng']) / 2, (env_params['north_lat'] + env_params['south_lat']) / 2)
-radius = max(abs(env_params['east_lng'] - env_params['west_lng']) / 2,
-             abs(env_params['north_lat'] - env_params['south_lat']) / 2)
-side = env_params['side']
-interval = 2 * radius / side
 
 """
 Here, we build the connection to mongodb, which will be used to speed up access to road network information.
@@ -78,19 +73,14 @@ mydb = myclient["route_network"]
 mycollect = mydb['route_list']
 
 
-def apply_origin_get_zone(row):
-    return get_zone(row['origin_lat'], row['origin_lng'])
-
-
-def apply_dest_get_zone(row):
-    return get_zone(row['dest_lat'], row['dest_lng'])
-
-
-def apply_get_zone(row):
-    return get_zone(row['lat'], row['lng'])
-
-
 # define the function to get zone_id of segment node
+original = (max(env_params['north_lat'],env_params['south_lat']), min(env_params['east_lng'],env_params['west_lng'])) # max_lat, min_lng
+length = abs(env_params['north_lat'] - env_params['south_lat'])
+width = abs(env_params['east_lng'] - env_params['west_lng'])
+side = env_params['side']
+lat_interval = length / side
+lng_interval = width / side
+
 def get_zone(lat, lng):
     """
     :param lat: the latitude of coordinate
@@ -100,17 +90,10 @@ def get_zone(lat, lng):
     :return: the id of zone that the point belongs to
     :rtype: float
     """
-    if lat < center[1]:
-        i = math.floor(side / 2) - math.ceil((center[1] - lat) / interval) + side % 2
-    else:
-        i = math.floor(side / 2) + math.ceil((lat - center[1]) / interval) - 1
-
-    if lng < center[0]:
-        j = math.floor(side / 2) - math.ceil((center[0] - lng) / interval) + side % 2
-    else:
-        j = math.floor(side / 2) + math.ceil((lng - center[0]) / interval) - 1
+    #
+    i = math.floor(round(original[0]-lat,3)/round(lat_interval,3))
+    j = math.floor(round(lng - original[1],3)/round(lng_interval,3))
     return i * side + j
-
 
 result = pd.DataFrame()
 nodelist = []
@@ -151,13 +134,19 @@ def distance(coord_1, coord_2):
 
     return manhattan_dis
 
-
 def calculate_weight(row):
-    if row['trip_distance'] > 7:
-        return 27 + 1.9 * int(max(0, row['trip_distance'] * 100 - 2000) / 200)
+    # if row['trip_distance'] > 7:
+    #     return 27 + 1.9 * int(max(0, row['trip_distance'] * 1000 - 2000) / 200)
+    # else:
+    #     return 93.5 + 1.3 * (row['trip_distance'] * 1000 - 700) / 200
+    if row['trip_distance'] <= 2.0:
+        price = 27
+    elif row['trip_distance'] > 2.0 and row['trip_distance'] <= 7.0:
+        price = 27 + 1.9 * (int((row['trip_distance'] - 2.0) * 1000) // 200)
     else:
-        return 93.5 + 1.3 * (row['trip_distance'] * 1888 - 788) / 208
-
+        price = 93.5 + 1.3 * (int((row['trip_distance'] - 7.0) * 1000) // 200)
+    # reward_list.append(price)
+    return price
 
 def distance_array(coord_1, coord_2):
     """
@@ -250,7 +239,8 @@ def route_generation_array(origin_coord_array, dest_coord_array, mode='rg'):
             }
             # print('re start|    data =',data)
             # print('Mycollect =',mycollect)
-            re = mycollect.find_one(data)
+            # re = mycollect.find_one(data)
+            re = False
             # print('re end')
             if re:
                 ite = [int(item) for item in re['itinerary_node_list'].strip('[').strip(']').split(', ')]
@@ -262,7 +252,8 @@ def route_generation_array(origin_coord_array, dest_coord_array, mode='rg'):
                 itinerary_node_list.append([origin, dest])
         # itinerary_node_list = ox.distance.shortest_path(G, origin_node_list, dest_node_list, weight='length', cpus=16)
         for itinerary_node in itinerary_node_list:
-
+            if itinerary_node is None:
+                print("Error")
             if itinerary_node is not None:
                 itinerary_segment_dis = []
                 for i in range(len(itinerary_node) - 1):
@@ -424,7 +415,7 @@ def sample_all_drivers(driver_info, t_initial, t_end, driver_sample_ratio=1, dri
     """
     # 当前并无随机抽样司机；后期若需要，可设置抽样模块生成sampled_driver_info
     new_driver_info = deepcopy(driver_info)
-    sampled_driver_info = new_driver_info
+    sampled_driver_info = new_driver_info.sample(frac=env_params['driver_sample_ratio'],random_state=42)
     sampled_driver_info['status'] = 3
     loc_con = sampled_driver_info['start_time'] <= t_initial
     sampled_driver_info.loc[loc_con, 'status'] = 0
@@ -439,9 +430,11 @@ def sample_all_drivers(driver_info, t_initial, t_end, driver_sample_ratio=1, dri
     sampled_driver_info['remaining_time_for_current_node'] = 0
     sampled_driver_info['itinerary_node_list'] = [[] for i in range(sampled_driver_info.shape[0])]
     sampled_driver_info['itinerary_segment_time_list'] = [[] for i in range(sampled_driver_info.shape[0])]
-
+    # sampled_driver_info = sampled_driver_info.loc[(sampled_driver_info['lng'] > env_params['south_lat']) & (sampled_driver_info['lng'] < env_params['north_lat']) & (sampled_driver_info['lat'] < 22.285) & (sampled_driver_info['lat'] > 22.23)]
+    # sampled_driver_info = sampled_driver_info.loc[(sampled_driver_info['target_loc_lng'] > 114.13) & (sampled_driver_info['target_loc_lng'] < 114.235) & (sampled_driver_info['target_loc_lat'] < 22.285) & (sampled_driver_info['target_loc_lat'] > 22.23)]
+    sampled_driver_info['grid_id'] = sampled_driver_info.apply(lambda row: get_zone(row['lat'], row['lng']), axis=1)
+    sampled_driver_info['target_grid_id'] = sampled_driver_info.apply(lambda row: get_zone(row['target_loc_lat'], row['target_loc_lng']), axis=1)
     return sampled_driver_info
-
 
 def sample_request_num(t_mean, std, delta_t):
     """
@@ -535,8 +528,10 @@ def skewed_normal_distribution(u, thegma, k, omega, a, input_num):
     return res_snd
 
 
+
+
 def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dispatch_method='LD',
-                   lr_model=train_model(), mlp_model=None, cur_time=0):
+                   lr_model=train_model(), mlp_model=None,cur_time=0):
     """
     :param wait_requests: the requests of orders
     :type wait_requests: pandas.DataFrame
@@ -555,10 +550,8 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
     num_idle_driver = idle_driver_table.shape[0]
     matched_pair_actual_indexs = []
     matched_itinerary = []
-    new_all_requests = pd.DataFrame(
-        columns=['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
-                 'pick_up_distance', 'time', 'time_period', 'num_wait_requests', 'num_available_drivers', 'radius',
-                 'match_state'])
+    new_all_requests = pd.DataFrame(columns=['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
+                    'pick_up_distance','time','time_period','num_wait_requests','num_available_drivers','radius','match_state'])
     if num_wait_request > 0 and num_idle_driver > 0:
         if dispatch_method == 'LD':
             # generate order driver pairs and corresponding itinerary
@@ -584,9 +577,8 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
             # if len(flag) > 0:
             #     order_driver_pair = np.vstack(
             #         [request_array[flag, 2], driver_loc_array[flag, 2], request_array[flag, 3], dis_array[flag]]).T
-            matched_pair_actual_indexs, new_all_requests = Broadcasting.dispatch_broadcasting(
-                order_driver_pair.tolist(), dis_array,
-                lr_model, mlp_model, cur_time, driver_table)
+            matched_pair_actual_indexs,new_all_requests = Broadcasting.dispatch_broadcasting(order_driver_pair.tolist(), dis_array,
+                                                                            lr_model, mlp_model,cur_time,driver_table)
             # matched_pair_actual_indexs = LD(order_driver_pair.tolist())
             if len(matched_pair_actual_indexs) == 0:
                 return [], [], new_all_requests
@@ -623,24 +615,21 @@ def driver_online_offline_decision(driver_table, current_time):
     # 车辆状态：0 cruise (park 或正在cruise)， 1 表示delivery，2 pickup, 3 表示下线, 4 reposition
     # This function is aimed to switch the driver states between 0 and 3, based on the 'start_time' and 'end_time' of drivers
     # Notice that we should not change the state of delievery and pickup drivers, since they are occopied.
-
     online_driver_table = driver_table.loc[
-        (driver_table['start_time'] <= current_time) & (driver_table['end_time'] >= current_time)]
+        (driver_table['start_time'] <= current_time) & (driver_table['end_time'] > current_time)]
     offline_driver_table = driver_table.loc[
-        (driver_table['start_time'] > current_time) | (driver_table['end_time'] < current_time)]
+        (driver_table['start_time'] > current_time) | (driver_table['end_time'] <= current_time)]
 
     online_driver_table = online_driver_table.loc[
-        (online_driver_table['status'] != 1) | (online_driver_table['status'] != 2)]
+        (online_driver_table['status'] != 1) & (online_driver_table['status'] != 2)]
     offline_driver_table = offline_driver_table.loc[
-        (offline_driver_table['status'] != 1) | (offline_driver_table['status'] != 2)]
+        (offline_driver_table['status'] != 1) & (offline_driver_table['status'] != 2)]
     # print(f'online count: {len(online_driver_table)}, offline count: {len(offline_driver_table)}, total count: {len(driver_table)}')
     new_driver_table = driver_table
     new_driver_table.loc[new_driver_table.isin(online_driver_table.to_dict('list')).all(axis=1), 'status'] = 0
     new_driver_table.loc[new_driver_table.isin(offline_driver_table.to_dict('list')).all(axis=1), 'status'] = 3
-    print("hi", new_driver_table.loc[new_driver_table['status'] == 1])
     # return new_driver_table
     return new_driver_table
-
 
 # define the function to get zone_id of segment node
 

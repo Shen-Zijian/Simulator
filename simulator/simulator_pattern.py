@@ -19,7 +19,6 @@ import random
 from config import *
 from path import *
 import pickle
-from utilities import get_zone,apply_origin_get_zone,apply_dest_get_zone,apply_get_zone
 import sys
 class SimulatorPattern(object):
     def __init__(self, **kwargs):
@@ -30,7 +29,26 @@ class SimulatorPattern(object):
 
         if self.simulator_mode == 'toy_mode':
             self.request_all = pickle.load(open(data_path + self.request_file_name + '.pickle', 'rb'))
-            self.driver_info = pickle.load(open(load_path + self.driver_file_name + '.pickle', 'rb')).head(env_params['driver_num'])
+            # print(self.request_all)
+            self.driver_info = pickle.load(open(load_path + self.driver_file_name + '.pickle', 'rb'))#.head(env_params['driver_num'])
+            # print(np.min(self.driver_info['lng'].values), np.max(self.driver_info['lng'].values),np.average(self.driver_info['lng'].values))
+            # print(np.average(self.driver_info['lat'].values), np.max(self.driver_info['lat'].values),np.average(self.driver_info['lat'].values))
+            # print(all_requests)
+            # print(type(env_params['west_lng']),env_params['west_lng'])
+            # print(type(self.driver_info))
+            # driver_info_1 = self.driver_info.loc[(self.driver_info['lng'] > env_params['west_lng'])]
+            # print(driver_info_1['lng'].values)
+            # print(self.driver_info['lng'] > float(env_params['west_lng']))
+            # driver_info_2 = self.driver_info.loc[(self.driver_info['lng'] > 114.13)]
+            # print(driver_info_2['lng'].values)
+            # print(self.driver_info['lng'] > 114.13)
+            # west_lng_value = env_params['west_lng']
+            # driver_info_3 = self.driver_info.loc[(self.driver_info['lng'] >west_lng_value)]
+            # print(driver_info_3['lng'].values)
+            # self.driver_info = self.driver_info.loc[(self.driver_info['lng'] > 114.13)&(self.driver_info['lng'] < 114.235)&(self.driver_info['lat'] < 22.285)&(self.driver_info['lat'] > 22.23)]
+            # print(self.driver_info)
+            # print(self.driver_info['lng'] > west_lng_value)
+            # self.driver_info = self.driver_info.loc[(self.driver_info['lat'] < env_params['north_lat']) & (self.driver_info['lat'] > env_params['south_lat'])]
             # self.driver_info = self.driver_info.sample(n=env_params['driver_num'])
             # print(self.driver_info)
 

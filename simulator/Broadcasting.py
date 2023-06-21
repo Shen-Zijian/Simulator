@@ -16,7 +16,7 @@ import pylab
 from datetime import datetime
 
 RATIO_NOISE = 0.02
-from numba import jit, vectorize, int64
+# from numba import jit, vectorize, int64
 
 
 def sigmoid(x):
@@ -45,7 +45,7 @@ def normalization(data):
     result = (data - data.min()) / scale
     return result
 
-
+driver_behaviour_scalar = pickle.load(open('./input/driver_behaviour_scaler.pkl', 'rb'))
 # @jit(nopython=True)
 def driver_decision(distance, reward, lr_model):
     """
@@ -57,6 +57,7 @@ def driver_decision(distance, reward, lr_model):
     """
     r_dis, c_dis = distance.shape
     temp_ = np.dstack((distance, reward)).reshape(-1, 2)
+    temp_ = driver_behaviour_scalar.transform(temp_)
     result = lr_model.predict_proba(temp_).reshape(r_dis, c_dis, 2)
     result = np.delete(result, 0, axis=2)
     result = np.squeeze(result, axis=2)
@@ -245,21 +246,30 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
 
     random.seed(10)
     temp_random = np.random.random((num_order, num_driver))
+    # temp_random = 0
+    # driver_pick_flag = (driver_decision_info > temp_random) + 0
+    # index_1 = np.argwhere(driver_decision_info == 0).tolist()
+    # index_2 = np.argwhere(driver_pick_flag == 0).tolist()
+    # index_1 = set(tuple(item) for item in index_1)
+    # index_2 = set(tuple(item) for item in index_2)
+    #
+    # set_res = index_2 - index_1
+    # index_diff = np.array([list(item) for item in set_res])
+    # # print(index_diff)
+    # if len(index_diff) != 0:
+    #     index_diff = np.array(index_diff)
+    #     diff_row = index_diff[:, 0]
+    #     diff_col = index_diff[:, 1]
+    #     match_state_array[diff_row, diff_col] = 3
+    # temp_random = 0.1
     driver_pick_flag = (driver_decision_info > temp_random) + 0
-    index_1 = np.argwhere(driver_decision_info == 0).tolist()
-    index_2 = np.argwhere(driver_pick_flag == 0).tolist()
-    index_1 = set(tuple(item) for item in index_1)
-    index_2 = set(tuple(item) for item in index_2)
+    mask = driver_decision_info < 0.1
 
-    set_res = index_2 - index_1
-    index_diff = np.array([list(item) for item in set_res])
-    # print(index_diff)
-    if len(index_diff) != 0:
-        index_diff = np.array(index_diff)
-        diff_row = index_diff[:, 0]
-        diff_col = index_diff[:, 1]
-        match_state_array[diff_row, diff_col] = 3
-
+    # 使用布尔数组将 driver_decision_info 中小于0.3的值置为0
+    driver_decision_info[mask] = 0
+    # print(match_state_array)
+    # 使用相同的布尔数组将 match_state_array 中对应位置的值修改为3
+    match_state_array[mask] = 3
 
     # for i in range(num_order):
     #     for j in range(num_driver):
@@ -284,7 +294,7 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
         if len(temp_line) >= 1:
             temp_num = generate_random_num(len(temp_line) - 1)
             # temp_num = 1
-            driver_pick_flag[:, temp_line[temp_num, 0]] = 0
+            # driver_pick_flag[:, temp_line[temp_num, 0]] = 0
             row[:] = 0
             row[temp_line[temp_num, 0]] = 1
             driver_pick_flag[index, :] = row

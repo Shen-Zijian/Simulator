@@ -14,9 +14,9 @@ env_params = {
     'delta_t': 2,  # s
     'vehicle_speed': 22.788,  # km / h
     'repo_speed': 1,  # 目前的设定需要与vehicl speed保持一致
-    'order_sample_ratio': 0.5,
+    'order_sample_ratio': 0.09,
     'order_generation_mode': 'sample_from_base',
-    'driver_sample_ratio': 1,
+    'driver_sample_ratio': 0.06,
     'maximum_wait_time_mean': 300,
     'maximum_wait_time_std': 0,
     'radius_list': [0.5, 1, 2, 3, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -25,10 +25,10 @@ env_params = {
                          11: 2.5, 12: 2.5, 13: 2.5, 14: 2.5, 15: 2.5, 16: 2.5},
     'model_name': 'fixed',  # lstm,fixed,mlp,lr,mtl
     'online_weight_update': False,  # for policy choose one label with minimum loss or sum all 3 labels
-    'mtl_weights' : [1,1,1],
+    'mtl_weights': [1, 1, 1],
     'lstm_dict': {'len_seq': 10},
     'record_time_interval': 30,  # saving grida data interval
-    'label_name': 'es_best_30s',
+    'label_name': 'fixed',
     # "maximum_pickup_time_passenger_can_tolerate_mean":200,  # s
     "maximum_pickup_time_passenger_can_tolerate_mean": PICKUP_TIME_MEAN,
     "maximum_pickup_time_passenger_can_tolerate_std": PICKUP_TIME_STD,  # s
@@ -48,8 +48,8 @@ env_params = {
     'track_recording_flag': True,
     'driver_far_matching_cancel_prob_file': 'driver_far_matching_cancel_prob',
     'input_file_path': 'input/dataset.csv',
-    'request_file_name': 'input/hongkong_processed_order',  # 'toy_requests',
-    'driver_file_name': 'input/hongkong_driver_info',
+    'request_file_name': 'input/hongkong_processed_order_new_road_network',  # 'toy_requests',
+    'driver_file_name': 'input/hongkong_driver_info_updated',
     'road_network_file_name': 'road_network_information.pickle',
     'dispatch_method': 'LD',  # LD: lagarange decomposition method designed by Peibo Duan
     'method': 'instant_reward_no_subway',
@@ -60,8 +60,8 @@ env_params = {
     'change_grid_id': True,
     'price_per_km': 5,  # ￥ / km
     'road_information_mode': 'load',
-    'north_lat': 40.8845,
-    'south_lat': 40.6968,
-    'east_lng': -74.0831,
-    'west_lng': -73.8414
+    'north_lat': 22.55,  # 40.8845
+    'south_lat': 22.13,  # 40.6968
+    'east_lng': 114.42,  # -74.0831
+    'west_lng': 113.81  # -73.8414
 }
