@@ -17,6 +17,7 @@ warnings.filterwarnings('ignore')
 
 def calculate_metrics(record_path, time_interval, sample_frac):
     records = pickle.load(open(record_path, 'rb'))
+    # print(records)
     order = pickle.load(open('./input/order.pickle', 'rb'))
     order_num_time = {}
     matched_rate_time = {}
@@ -54,7 +55,9 @@ def calculate_metrics(record_path, time_interval, sample_frac):
             if key not in driver_no_cruising_time[driver][1]:
                 cruising_count += 1
         driver_state_info = np.append(driver_state_info, cruising_count)
+
     order_info = np.array(list(time_to_order.values()))
+
     return order_info.sum(), matched_num, matched_num/order_info.sum(), order_info.mean(), order_info.max(), driver_state_info.mean()
 
 

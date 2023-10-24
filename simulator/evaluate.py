@@ -9,68 +9,70 @@ import matplotlib.colors as mcolors
 from config import env_params
 import os
 import pickle
-def eval_data():
-    data = pd.read_csv("./experiment/train_random_driver_MLP.csv")
-    print(data)
-    columns_name = ['radius', 'time', 'grid_id', 'num of matched order', 'total wait time', 'total price',
-                    'driver utilization rate', 'driver delivery rate', 'driver pickup rate', 'total pick up distance',
-                    'total reward', 'ratio']
-    result = pd.DataFrame(columns=columns_name)
+def plot_data():
+    # Assuming df is your DataFrame
+    df = pd.read_csv("./report_data.csv")
+    # mean_values = df[df['model'].isin(['0.5','1','1.5','2','2.5','3','3.5','4','4.5','5','6'])].mean()
 
-    # data = data.dropna()
-    input_data = data.drop(['trip_time'], axis=1)
-    input_data = input_data.dropna()
+    # Add a new row 'baseline' with the calculated mean values
+    # mean_values['model'] = 'bl'
+    # print(mean_values)
+    # df = df.append(mean_values, ignore_index=True)
+    fig, axs = plt.subplots(3, 2, figsize=(20, 25))  # Change layout to 3x2
+    print(df[df['model'].isin(['esw','bl'])].to_string())
+    # Create a bar plot for each column, adjust indices for new layout
+    columns = ['num_matched_order', 'total_price', 'avg_wait_time', 'avg_pickup_time', 'driver_utilization_rate','avg_pickup_dis']
+    for i, col in enumerate(columns):
+        row = i // 2
+        col = i % 2
+        bars = axs[row, col].bar(df['model'], df[columns[i]])
+        for j, model in enumerate(df['model']):
+            if model in ['lr','lstm', 'bl']:
+                bars[j].set_color('r')
+        axs[row, col].set_xlabel('Model')
+        axs[row, col].set_ylabel(columns[i])
+        axs[row, col].set_title(f'{columns[i]} by Model')
+    plt.subplots_adjust(hspace=1, wspace=0.5)
+    # Remove unused subplot
+    # fig.delaxes(axs[2, 1])
+    plt.show()
 
-    # radius_list = data['radius'].unique()
-    # time_list = ['morning','evening','midnight','other']
-    time_list = data['time_period'].unique()
-    print(time_list)
-    for temp_time in time_list:
-        # for temp_rad in radius_list:
-        grid_data = data.loc[(data['time_period'] == temp_time), ('order_grid_id', 'price')]
-        print(grid_data)
-        grid_id_list = grid_data['order_grid_id'].unique()
-        for temp_grid_id in grid_id_list:
-            # data_radius_5 = data.loc[(data['radius'] == temp_rad),('wait_time', 'price','pickup_distance')]
-            data_radius_5 = data.loc[(data['time_period'] == temp_time) & (data['order_grid_id'] == temp_grid_id), (
-            'wait_time', 'price', 'pickup_distance', 'trip_distance', 'reward', 'order_grid_id')]
-            data_radius_5 = data_radius_5.dropna()
-            print(data_radius_5)
+def eval_data(model_name,label_name):
+    if model_name == 'fixed':
+        data = pd.read_csv(f"./experiment_{model_name}/record/matched_record_radius_{label_name}.csv")
+    else:
+        data = pd.read_csv(f"./experiment_{model_name}/record/matched_record_{label_name}.csv")
 
-            # print(data_radius_5['wait_time'])
-            # data_radius_5 = input_data
-            if len(data_radius_5) != 0:
-                total_wait_time = sum(np.array(data_radius_5['wait_time'], dtype=float))
-                total_pickup_time = sum(np.array(data_radius_5['pickup_distance'], dtype=float))
-                total_price = sum(np.array(data_radius_5['price'], dtype=float))
-                sum_order = data_radius_5.shape
-                driver_utilization_rate = (sum(np.array(data_radius_5['trip_distance'], dtype=float)) + sum(
-                    np.array(data_radius_5['pickup_distance'], dtype=float))) / (22.788 * 500 * 12)
-                driver_utilization_rate = min(driver_utilization_rate, 1.0)
-                driver_delivery_utilization_rate = sum(np.array(data_radius_5['trip_distance'], dtype=float)) / (
-                            22.788 * 500 * 12)
-                driver_pickup_utilization_rate = sum(np.array(data_radius_5['pickup_distance'], dtype=float)) / (
-                            22.788 * 500 * 12)
-                total_reward = sum(np.array(data_radius_5['reward'], dtype=float))
-                print('radius:', 'MLP', 'time:', temp_time, 'grid_id:', temp_grid_id)
-                print('num of matched order', sum_order[0])
-                print('total wait time:', total_wait_time)
-                print('total price:', total_price)
-                print('driver utilization rate:', driver_utilization_rate)
-                print('driver delivery rate:', driver_delivery_utilization_rate)
-                print('driver pickup rate:', driver_pickup_utilization_rate)
-                print('total pick up distance:', total_pickup_time)
-                print('total reward:', total_reward)
-                print('ratio:', total_price / (total_pickup_time))
-                tempres = ['MLP', temp_time, temp_grid_id, sum_order[0], total_wait_time, total_price,
-                           driver_utilization_rate, driver_delivery_utilization_rate, driver_pickup_utilization_rate,
-                           total_pickup_time, total_reward, total_price / (total_pickup_time)]
-                test_list = np.array(tempres).reshape(1, 12)
-                test_df = pd.DataFrame(test_list, columns=columns_name)
-                print(test_df)
-                result = pd.concat([result, test_df], ignore_index=True)
-                print("==============")
-    result.to_csv('./experiment/evaluation_MLP.csv')
+    result_data = pd.read_csv('./report_data.csv')
+    # print(data.columns)
+    num_matched_order = sum(np.array(data['num_matched_order'].values, dtype=float))
+    total_wait_time = np.sum(data['wait_time'].values)
+    total_pickup_time = sum(np.array(data['pickup_time'].values*data['num_matched_order'].values, dtype=float))
+    avg_pickup_dis = np.sum(data['avg_matched_pickup_distance'].values*data['num_matched_order'].values)/num_matched_order
+    total_price = sum(np.array(data['total_matched_price'].values, dtype=float))
+    num_order = sum(np.array(data['num_order'].values, dtype=float))
+
+    matched_rate = num_matched_order/42045
+    driver_utilization_rate = sum(np.array(data['num_driver'], dtype=float)*np.array(data['driver_utilization_rate'], dtype=float)) / sum(np.array(data['num_driver'], dtype=float))
+    occupancy_rate = 1- sum(np.array(data['num_available_driver'], dtype=float)) / sum(np.array(data['num_driver'], dtype=float))
+
+    print('='*20)
+    print("model:",label_name)
+    print('num of matched order', num_matched_order)
+    print('matched rate:', matched_rate)
+    print('avg wait time:', total_wait_time/num_order)
+    print('avg pickup time:', avg_pickup_dis*3600/20.6)
+    print('total price:', total_price)
+    print('avg pickup distance',avg_pickup_dis)
+    print('driver utilization rate:', driver_utilization_rate)
+    print('occupancy rate:',occupancy_rate)
+    if not result_data.loc[result_data['model']==label_name].empty:
+        result_data.loc[result_data['model']==label_name] = [label_name, matched_rate, total_price,total_wait_time/num_order, avg_pickup_dis*3600/20.6,driver_utilization_rate,avg_pickup_dis]
+    else:
+        result_data.loc[len(result_data.index)] = [label_name, matched_rate, total_price,total_wait_time/num_order, avg_pickup_dis*3600/20.6,driver_utilization_rate,avg_pickup_dis]
+    # tempres = [label_name, num_matched_order, total_price,total_wait_time/num_matched_order, total_pickup_time/num_matched_order,driver_utilization_rate,]
+    # result_data = pd.DataFrame(columns=['model','num_matched_order', 'total_price','avg_wait_time', 'avg_pickup_time','driver_utilization_rate'])
+    result_data.to_csv('./report_data.csv',index=False)
 
 from simulator_env import Simulator
 def joint_csv():
@@ -105,29 +107,31 @@ def eval_grid_model_data():
     #     data = f.read()
     # num_order_generation = pickle.loads(data)
 
-    # label_list = ['am','amw','es','esw','fixed','matched_ratio']#, 'matched_ratio','avg_matched_price','avg_matched_pickup_distance','total_matched_price','total_matched_pickup_distance']
-    label_list = ['am']
+    label_list = ['am','amw','es','esw','fix','lr']#, 'matched_ratio','avg_matched_price','avg_matched_pickup_distance','total_matched_price','total_matched_pickup_distance']
+    # label_list = ['esw']
     # label_list = ['am_30s','am-weighted_30s','es_30s','es-weighted_30s','fixed_30s']#, 'matched_ratio','avg_matched_price','avg_matched_pickup_distance','total_matched_price','total_matched_pickup_distance']
     # label_list = ['fixed_data_30']
     cal_total_day = True
-    fix_dataset = pd.read_csv('D:/Files/Smart Mobility Lab/Transpotation_Simulator-1/simulator/experiment_fixed/record/fixed_data_30.csv'
-)
+    # fix_dataset = pd.read_csv('./experiment_fixed/record_original_driver_distribute/fixed_data_30.csv')
+    fix_dataset = pd.read_csv('./experiment_fixed/record/fixed_data_30.csv')
 
     # fix_dataset = fix_data_correction(fix_dataset,num_order_generation)
     # fix_dataset.loc[fix_dataset['num_matched_order']==0,'avg_pickup_distance'] = fix_dataset.loc[fix_dataset['num_matched_order']==0,'avg_pickup_distance'] - 100*(fix_dataset.loc[fix_dataset['num_matched_order']==0,'num_order'])
     for label in label_list:
         print(label)
-        dataset = pd.read_csv(f'./experiment_{model}/record/matched_record_{label}.csv')
+
+        dataset = pd.read_csv(f'./experiment_{model}/record/7_13_pm_4obj/matched_record_{label}.csv')
+        print(dataset.columns)
         # dataset = fix_data_correction(dataset,num_order_generation)
         # print(label,cal_matched_order(dataset), np.sum(dataset.loc[dataset['radius']=='lstm',('num_order')].to_numpy()))
-        grid_list = dataset['grid_id'].unique()
+
         radius_list = fix_dataset['radius'].unique()
         # print(grid_list)
         time_period_dict = {2: 'morning', 3: 'other', 0: 'evening', 1: 'midnight'}
-        grid_eval_result = pd.DataFrame(columns=['time_period','radius','avg_pickup_distance','total_price','match_rate','avg_driver_util_rate'])
+        grid_eval_result = pd.DataFrame(columns=['time_period','radius','avg_pickup_distance','total_price','match_rate','avg_driver_util_rate','DOAR'])
 
         for time_period in list(time_period_dict.keys()):
-            cur_grid_data = dataset.loc[(dataset['grid_id'] == id) & (dataset['time_period'] == time_period)]
+            cur_grid_data = dataset.loc[dataset['time_period'] == time_period]
             # print(cur_grid_data)
             if np.sum(cur_grid_data['num_available_driver']) != 0:
                 avg_driver_util_rate = np.sum(cur_grid_data['driver_utilization_rate'].values * cur_grid_data[
@@ -141,6 +145,12 @@ def eval_grid_model_data():
             else:
                 avg_pickup_distance = total_pickup_distance / np.sum(cur_grid_data['num_matched_order'].values)
             num_order = np.sum(cur_grid_data['num_order'].values)
+
+            if np.sum(cur_grid_data['num_attend'].values) == 0:
+                doar = 0
+            else:
+                doar = np.sum(cur_grid_data['num_accepted'].values) / np.sum(cur_grid_data['num_attend'].values)
+
             if num_order != 0:
                 match_rate = np.sum(cur_grid_data['num_matched_order'].values) / np.sum(cur_grid_data['num_order'].values)
             else:
@@ -148,12 +158,11 @@ def eval_grid_model_data():
 
             cur_period = time_period_dict[time_period]
             # cur_grid = id
-            grid_eval_result.loc[len(grid_eval_result.index)] = [cur_period,label,avg_pickup_distance,total_price,match_rate,avg_driver_util_rate]
+            grid_eval_result.loc[len(grid_eval_result.index)] = [cur_period,label,avg_pickup_distance,total_price,match_rate,avg_driver_util_rate,doar]
 
 
         if cal_total_day == True:
             cur_grid_data = dataset
-            # print(cur_grid_data)
             if np.sum(cur_grid_data['num_available_driver']) != 0:
                 avg_driver_util_rate = np.sum(cur_grid_data['driver_utilization_rate'].values * cur_grid_data[
                     'num_available_driver']) / np.sum(cur_grid_data['num_available_driver'])
@@ -167,6 +176,12 @@ def eval_grid_model_data():
                 avg_pickup_distance = 0
             else:
                 avg_pickup_distance = total_pickup_distance/np.sum(cur_grid_data['num_matched_order'].values)
+
+            if np.sum(cur_grid_data['num_attend'].values) == 0:
+                doar = 0
+            else:
+                doar = np.sum(cur_grid_data['num_accepted'].values) / np.sum(cur_grid_data['num_attend'].values)
+
             num_order = np.sum(cur_grid_data['num_order'].values)
             if num_order != 0:
                 match_rate = np.sum(cur_grid_data['num_matched_order'].values) / np.sum(
@@ -175,11 +190,13 @@ def eval_grid_model_data():
                 match_rate = 0
             grid_eval_result.loc[len(grid_eval_result.index)] = [ 'whole_day', label,
                                                                  avg_pickup_distance, total_price, match_rate,
-                                                                 avg_driver_util_rate]
+                                                                 avg_driver_util_rate,doar]
 
         for time_period in list(time_period_dict.keys()):
             for radius_ in radius_list:
                 cur_grid_data = fix_dataset.loc[(fix_dataset['time_period'] == time_period)&(fix_dataset['radius']==radius_)]
+                print(time_period,radius_,np.sum(cur_grid_data['num_matched_order']))
+                print(cur_grid_data)
                 if np.sum(cur_grid_data['num_available_driver']) !=0:
                     avg_driver_util_rate = np.sum(cur_grid_data['driver_utilization_rate'].values*cur_grid_data['num_available_driver'])/np.sum(cur_grid_data['num_available_driver'])
                 else:
@@ -192,6 +209,13 @@ def eval_grid_model_data():
                 else:
                     avg_pickup_distance = total_pickup_distance / np.sum(cur_grid_data['num_matched_order'].values)
                 num_order = np.sum(cur_grid_data['num_order'].values)
+
+                if np.sum(cur_grid_data['num_attend'].values) == 0:
+                    doar = 0
+                else:
+                    doar = np.sum(cur_grid_data['num_accepted'].values) / np.sum(cur_grid_data['num_attend'].values)
+
+
                 if num_order != 0:
                     match_rate = np.sum(cur_grid_data['num_matched_order'].values) / np.sum(
                         cur_grid_data['num_order'].values)
@@ -202,7 +226,7 @@ def eval_grid_model_data():
 
                 grid_eval_result.loc[len(grid_eval_result.index)] = [cur_period, f'{float(radius_)}',
                                                                      avg_pickup_distance, total_price, match_rate,
-                                                                     avg_driver_util_rate]
+                                                                     avg_driver_util_rate,doar]
 
         for radius_ in radius_list:
             cur_grid_data = fix_dataset.loc[fix_dataset['radius'] == radius_]
@@ -220,6 +244,12 @@ def eval_grid_model_data():
                 avg_pickup_distance = 0
             else:
                 avg_pickup_distance = total_pickup_distance / np.sum(cur_grid_data['num_matched_order'].values)
+
+            if np.sum(cur_grid_data['num_attend'].values) == 0:
+                doar = 0
+            else:
+                doar = np.sum(cur_grid_data['num_accepted'].values) / np.sum(cur_grid_data['num_attend'].values)
+
             num_order = np.sum(cur_grid_data['num_order'].values)
             if num_order != 0:
                 match_rate = np.sum(cur_grid_data['num_matched_order'].values) / np.sum(
@@ -230,7 +260,7 @@ def eval_grid_model_data():
             grid_eval_result.loc[len(grid_eval_result.index)] = ['whole_day', f'{float(radius_)}',
                                                                  avg_pickup_distance, total_price,
                                                                  match_rate,
-                                                                 avg_driver_util_rate]
+                                                                 avg_driver_util_rate,doar]
 
 
 
@@ -242,11 +272,18 @@ def eval_grid_model_data():
         file_path = os.path.join(folder_path, file_name)
         grid_eval_result.to_csv(file_path,index=False)
 # label_list = ['avg_matched_pickup_distance','total_matched_pickup_distance','total_matched_price']
+def generate_combine(label_list):
+    combine_df = pd.DataFrame()
+    for label in label_list:
+        eval_csv = pd.read_csv(f'./experiment_policy/eval/grid_model_{label}_eval.csv')
+        combine_df = pd.concat([combine_df,eval_csv],axis=0,ignore_index=True)
+    combine_df.drop_duplicates(inplace=True)
+    combine_df.to_csv(f'./experiment_policy/eval/grid_model_combine_eval.csv',index=False)
 def graphic():
     # model = env_params['model_name']
     # label = env_params['label_name']
     model = 'policy'
-    label = 'am'
+    label = 'combine'
     # print(label)
     dataset = pd.read_csv(f'./experiment_{model}/eval/grid_model_{label}_eval.csv')
     # dataset = pd.read_csv('./experiment_combine/data_lr_lstm_matched_ratio.csv')
@@ -268,7 +305,7 @@ def graphic():
         # dataset = pd.read_csv(f'./experiment_{model}/eval/grid_model_{label}_eval.csv')
         # dataset = pd.read_csv('./experiment_lstm/eval/lstm_combine_eval.csv')
         time_list = ['morning', 'evening', 'midnight', 'other','whole_day']
-        value_list = ['avg_pickup_distance', 'total_price', 'match_rate', 'avg_driver_util_rate','score']
+        value_list = ['avg_pickup_distance', 'total_price', 'match_rate', 'avg_driver_util_rate']
         fig = plt.figure(figsize=(16, 16))
         fig.suptitle(f'Grid Model {label} Evaluation', fontsize=20)
         #
@@ -279,17 +316,17 @@ def graphic():
         #
         #     # 绘制对应的子图
         print(dataset['radius'].unique())
-        # x = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']  # 点的横坐标
-        x = ['1.0', '2.0', '3.0', '4.0', '5.0']  # 点的横坐标
-        # x = ['1','2', '3','lr', 'fix', 'am','amw','es','esw']  # 点的横坐标
-        colors= ['darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','r','r','r']
-        # colors = ['darkblue', 'darkblue', 'darkblue', 'r','r', 'r','r', 'r','r']
+        # x = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0','2.0','3.0']  # 点的横坐标
+        # x = ['1.0', '2.0', '3.0', '4.0', '5.0']  # 点的横坐标
+        x = ['0.1', '0.3','1.0','lr', 'fix', 'am','amw','es','esw']  # 点的横坐标
+        # colors= ['darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue','darkblue']
+        colors = ['darkblue', 'darkblue', 'darkblue', 'r','r', 'r','r', 'r','r']
         print(colors)
         index = 1
         for time in time_list:
             for value in value_list:
                 k1 = []
-                ax = fig.add_subplot(5, 5, index)
+                ax = fig.add_subplot(5, 4, index)
                 index+=1
                 for item in x:
                     temp_data = dataset.loc[(dataset['radius']==item)&(dataset['time_period']==time),value]
@@ -300,23 +337,38 @@ def graphic():
                 ax.set_title(value+' | '+time, fontsize=10)  # 为子图添加标题，设置标题的字体，字体的大小，字体的颜色
                 # ax.set_xlabel(value)  # 为x轴添加标签
         folder_path = f"./experiment_{model}/picture/"
-        file_name = f"grid_model_{label}_evaluation_1.png"
+        file_name = f"grid_model_{label}_evaluation_new.png"
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         file_path = os.path.join(folder_path, file_name)
+        print(file_path)
         # print(file_path)
         # plt.show()
         plt.savefig(file_path)
         plt.clf()
 
-# def static_order_num:
+# def static_order_num:num_matched_order, total_price,total_wait_time/num_matched_order, total_pickup_time/num_matched_order,driver_utilization_rate,
 
 
 if __name__ == '__main__':
-    # eval_data()
+    model_list = ['policy','fixed']
+    # fixed_list = ['0.5','1','1.5','2','2.5','3','3.5','4','4.5','5','6']
+    # model_list = ['fixed']
+    fixed_list = ['2.5','3','4','5','6','7','8','9','10']
+    policy_list = ['transformer_fix','transformer_am','transformer_amw','transformer_es','transformer_esw','transformer_esw_HK']
+    # policy_list = ['lstm_fix','lstm_am','lstm_amw','lstm_es','lstm_esw']
+    for model in model_list:
+        if model == 'policy':
+            for label in policy_list:
+                eval_data(model_name='policy',label_name=label)
+        else:
+            for label in fixed_list:
+                eval_data(model_name='fixed',label_name=label)
+    # plot_data()
     # joint_csv()
-    eval_grid_model_data()
-    graphic()
+    # eval_grid_model_data()
+    # generate_combine(label_list = ['am','amw','es','esw','fix','lr'])
+    # graphic()
     # a = np.random.random((100, 100))
     # b = np.random.random((100, 100))
     # c = (a<b)+0

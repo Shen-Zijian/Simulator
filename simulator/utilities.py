@@ -4,6 +4,7 @@ import numpy
 from Driver_behavour import train_model
 # from MLP import MLP_nn
 import numpy as np
+import json
 from copy import deepcopy
 import random
 from random import choice
@@ -193,6 +194,13 @@ def get_distance_array(origin_coord_array, dest_coord_array):
         dis_array.append(dis)
     dis_array = np.array(dis_array)
     return dis_array
+
+def add_action(action_name,data,action_list):
+    cur_dict = {}
+    cur_dict['actionType'] = action_name
+    cur_dict['data'] = data
+    action_list.append(cur_dict)
+    return action_list
 
 
 def route_generation_array(origin_coord_array, dest_coord_array, mode='rg'):
@@ -416,6 +424,7 @@ def sample_all_drivers(driver_info, t_initial, t_end, driver_sample_ratio=1, dri
     # 当前并无随机抽样司机；后期若需要，可设置抽样模块生成sampled_driver_info
     new_driver_info = deepcopy(driver_info)
     sampled_driver_info = new_driver_info.sample(frac=env_params['driver_sample_ratio'],random_state=42)
+    # sampled_driver_info = new_driver_info
     sampled_driver_info['status'] = 3
     loc_con = sampled_driver_info['start_time'] <= t_initial
     sampled_driver_info.loc[loc_con, 'status'] = 0
@@ -430,11 +439,12 @@ def sample_all_drivers(driver_info, t_initial, t_end, driver_sample_ratio=1, dri
     sampled_driver_info['remaining_time_for_current_node'] = 0
     sampled_driver_info['itinerary_node_list'] = [[] for i in range(sampled_driver_info.shape[0])]
     sampled_driver_info['itinerary_segment_time_list'] = [[] for i in range(sampled_driver_info.shape[0])]
-    # sampled_driver_info = sampled_driver_info.loc[(sampled_driver_info['lng'] > env_params['south_lat']) & (sampled_driver_info['lng'] < env_params['north_lat']) & (sampled_driver_info['lat'] < 22.285) & (sampled_driver_info['lat'] > 22.23)]
+    # sampled_driver_info = sampled_driver_info.loc[(sampled_driver_info['lng'] > 114.13) & (sampled_driver_info['lng'] < 114.235) & (sampled_driver_info['lat'] < 22.285) & (sampled_driver_info['lat'] > 22.23)]
     # sampled_driver_info = sampled_driver_info.loc[(sampled_driver_info['target_loc_lng'] > 114.13) & (sampled_driver_info['target_loc_lng'] < 114.235) & (sampled_driver_info['target_loc_lat'] < 22.285) & (sampled_driver_info['target_loc_lat'] > 22.23)]
     sampled_driver_info['grid_id'] = sampled_driver_info.apply(lambda row: get_zone(row['lat'], row['lng']), axis=1)
     sampled_driver_info['target_grid_id'] = sampled_driver_info.apply(lambda row: get_zone(row['target_loc_lat'], row['target_loc_lng']), axis=1)
     return sampled_driver_info
+
 
 def sample_request_num(t_mean, std, delta_t):
     """
@@ -528,7 +538,44 @@ def skewed_normal_distribution(u, thegma, k, omega, a, input_num):
     return res_snd
 
 
+def process_item(item):
+    driver_id, values = item
+    return {
+        'id': driver_id,
+        'route': [values[:2]],
+    }
 
+
+
+def update_route(driver_df, filename):
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    # 对于每一项未处理的数据
+    for index,row in driver_df.iterrows():
+        # print(row['driver_id'],[row['lng'],row['lat']])
+        # 在已有的数据中查找对应的司机ID
+        for driver in data['drivers']:
+            if driver['id'] == row['driver_id']:
+                # 如果找到了，就添加新的经纬度数据
+                driver['route'].append([row['lng'],row['lat']])
+                break
+        else:
+            # 如果没有找到，就添加一个新的司机ID，并设置其路线数据
+            data['drivers'].append({
+                'id': row['driver_id'],
+                'route': [[row['lng'],row['lat']]]
+            })
+    # 将更新后的数据写回文件
+    with open(filename, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def update_action(time,action_list,filename):
+    # print(action_list)
+    with open(filename, 'r') as f:
+        actions = json.load(f)
+    actions[time] = action_list
+    with open(filename, 'w') as f:
+        json.dump(actions, f, indent=2)
 
 def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dispatch_method='LD',
                    lr_model=train_model(), mlp_model=None,cur_time=0):
@@ -607,7 +654,7 @@ def order_dispatch(wait_requests, driver_table, maximal_pickup_distance=950, dis
             # print('np.array(matched_itinerary =',len(np.array(matched_itinerary)))
     # print("========utilitty========")
     # print(new_all_requests['time'])
-    return matched_pair_actual_indexs, np.array(matched_itinerary), new_all_requests
+    return matched_pair_actual_indexs, matched_itinerary, new_all_requests
 
 
 def driver_online_offline_decision(driver_table, current_time):

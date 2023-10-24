@@ -59,7 +59,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report
 from imblearn.over_sampling import SMOTE
-
+import pickle
 def train_model():
     train_data = pd.read_csv('./output3/behavior_data.csv')
     train_data = np.array(train_data)
@@ -84,11 +84,13 @@ def train_model():
     y_true = y_train
     y_pred = LR.predict(X_train)
     target_names = ['0', '1']
-    print(classification_report(y_true, y_pred, target_names=target_names))
-    print("val_set")
+    # print(classification_report(y_true, y_pred, target_names=target_names))
+    # print("val_set")
     y_true = y_test
     y_pred = LR.predict(X_test)
-    print(classification_report(y_true, y_pred, target_names=target_names))
+    # print(classification_report(y_true, y_pred, target_names=target_names))
+    pickle.dump(LR,open("./input/Driver_Behaviour.pkl",'wb'))
+    print("Finished")
     return LR
 if __name__ == '__main__':
     lr_model = train_model()
@@ -96,20 +98,6 @@ if __name__ == '__main__':
     price_list = list(range(0,1000))
     prob_array = np.empty(shape=(0,0))
     num = 0
-    temp = np.array([[1,2],[12,2],[1.1,2.9],[1,2]])
-    print(temp.shape)
-    price_array = np.random.random((300,300))
-    dis_array = 2*price_array
-    # print("the predict is",lr_model.predict_proba(temp))
-    temp_ = np.dstack((price_array,dis_array))
-    temp_ = temp_.reshape(-1,2)
-    print(temp_)
-    res = lr_model.predict_proba(temp_)
-    res = res.reshape(300,300,2)
-    print(res.shape)
-    res_ = np.delete(res,0,axis=2)
-    print("the predict is", res)
-    print("the predict is", res_)
     for dis_val in distance_list:
         for price_val in price_list:
             temp_list = []

@@ -45,8 +45,9 @@ def normalization(data):
     result = (data - data.min()) / scale
     return result
 
-driver_behaviour_scalar = pickle.load(open('./input/driver_behaviour_scaler.pkl', 'rb'))
+
 # @jit(nopython=True)
+driver_behaviour_scalar = pickle.load(open('./input/driver_behaviour_scaler.pkl', 'rb'))
 def driver_decision(distance, reward, lr_model):
     """
 
@@ -57,7 +58,7 @@ def driver_decision(distance, reward, lr_model):
     """
     r_dis, c_dis = distance.shape
     temp_ = np.dstack((distance, reward)).reshape(-1, 2)
-    temp_ = driver_behaviour_scalar.transform(temp_)
+    # temp_ = driver_behaviour_scalar.transform(temp_)
     result = lr_model.predict_proba(temp_).reshape(r_dis, c_dis, 2)
     result = np.delete(result, 0, axis=2)
     result = np.squeeze(result, axis=2)
@@ -86,10 +87,10 @@ def randomcolor():
 
 
 def Plotting(x_list, y_list, name):
-    z1 = np.polyfit(x_list, y_list, 5)  # 曲线拟合，返回值为多项式的各项系数
-    p1 = np.poly1d(z1)  # 返回值为多项式的表达式，也就是函数式子
-    y_pred = p1(x_list)  # 根据函数的多项式表达式，求解 y
-    plot1 = pylab.plot(x_list, y_list, 'o', label='original values', color=randomcolor())
+    # z1 = np.polyfit(x_list, y_list, 5)  # 曲线拟合，返回值为多项式的各项系数
+    # p1 = np.poly1d(z1)  # 返回值为多项式的表达式，也就是函数式子
+    # y_pred = p1(x_list)  # 根据函数的多项式表达式，求解 y
+    plot1 = pylab.plot(x_list, y_list, 'o', color=randomcolor())
     # plot2 = pylab.plot(x_list, y_pred, 'r', label=name, color=randomcolor())
     pylab.title('Distribution')
     pylab.ylabel('Probability')
@@ -166,6 +167,26 @@ def generate_random_num(length):
         res = random.randint(0, length)
     return res
 
+def count_ones(array):
+    # 统计第一列中1的个数
+    ones_in_first_column = np.count_nonzero(array[:, 0] == 1)
+
+    # 统计整个数组中1的个数
+    ones_in_array = np.count_nonzero(array == 1)
+
+    return ones_in_first_column, ones_in_array
+
+def count_matches(array1, array2):
+    # 找到数组1中大于0.7的元素的位置
+    condition1 = array1 > 0.55
+
+    # 找到数组2中元素为0的位置
+    condition2 = array2 == 0
+
+    # 统计满足条件的元素个数
+    count = np.count_nonzero(np.logical_and(condition1, condition2))
+
+    return count
 
 # @jit(nopython=True)
 def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur_time,driver_table):
@@ -175,7 +196,7 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     :param broadcasting_scale: the radius of order broadcasting
     :return: matched driver order pair
     """
-
+    # 检查 driver_info 中的 order_id 是否出现在 order_driver_info 中
     start_time = datetime.now()
     columns_name = ['origin_lng', 'origin_lat', 'order_id', 'reward_units', 'origin_grid_id', 'driver_id',
                     'pick_up_distance']
@@ -183,15 +204,28 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     # list_driver_grid_id = driver_table['grid_id'].tolist()
     # driver_grid_dict = dict(zip(list_driver,list_driver_grid_id))
     # print(driver_grid_dict)
+
     order_driver_info = pd.DataFrame(order_driver_info, columns=columns_name)
-
+    # print(order_driver_info)
+    # print(order_driver_info.to_string())
     # id of orders and drivers
-    id_order = order_driver_info['order_id'].unique()
-    id_driver = order_driver_info['driver_id'].unique()
 
+    # driver_table['in_order_driver_info'] = driver_table['driver_id'].isin(order_driver_info['driver_id'])
+    #
+    # # 如果 order_id 出现在 order_driver_info 中，将 num_attend 的值加 1，否则保持不变
+    # driver_table['num_attend'] = driver_table.apply(
+    #     lambda row: row['num_attend'] + 1 if row['in_order_driver_info'] else row['num_attend'], axis=1)
+    #
+    # # 删除辅助列
+    # driver_table.drop('in_order_driver_info', axis=1, inplace=True)
+
+    id_order = order_driver_info['order_id'].unique()
+    id_driver = order_driver_info['driver_id'].tolist()
+    # print(id_driver)
     # num of orders and drivers
     num_order = order_driver_info['order_id'].nunique()
     num_driver = order_driver_info['driver_id'].nunique()
+    # print(num_driver,num_order)
     new_all_requests = order_driver_info
     new_all_requests['time'] = cur_time
     new_all_requests['time_period'] = env_params['time_period']
@@ -220,6 +254,7 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     time_dict = {'evening': [1, 0, 0, 0], 'midnight': [0, 1, 0, 0], 'morning': [0, 0, 1, 0], 'other': [0, 0, 0, 1]}
 
     driver_decision_info = driver_decision(distance_driver_order, price_array, lr_model)
+    # print(driver_decision_info)
     driver_decision_time = datetime.now()
     # print(f"driver decision time:{(driver_decision_time - start_time).seconds}")
     # Distribution_graph(distance_driver_order, price_order, lr_model)     #distuibution graphre
@@ -228,26 +263,43 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     # radius_list = [1, 2, 3, 4, 4.5, 5, 5.5, 6, 7, 8, 9, 10]
 
     # temp_1 = np.dstack((order_grid_id_array, price_array,distance_driver_order,time_dict)).reshape(-1, 2)
+    '''
+    Choose Driver with probability
+    '''
+    # print(driver_decision_info)
     for i in range(num_order):
         for j in range(num_driver):
-            # temp_radius_list = []
-            # for temp_rad in radius_list:
-            #     temp_radius_list.append(mlp_model.predict([[temp_rad, order_lat_array[i,j], order_lng_array[i,j], price_array[i,j], distance_driver_order[i,j]]]))
-            # radius = radius_list[temp_radius_list.index(max(temp_radius_list))]
-
-            # print([order_grid_id_array[i,j], price_array[i,j], distance_driver_order[i,j]]+time_dict[env_params['time_period']])
-            # radius = mlp_model.predict([[order_grid_id_array[i,j], price_array[i,j], distance_driver_order[i,j]]+time_dict[env_params['time_period']]])
-            # radius = 1.5
             if distance_driver_order[i, j] > radius_array[i, j]:
-                driver_decision_info[i, j] = 0  # delete drivers further than broadcasting_scale
+                driver_decision_info[i, j] = 0.0  # delete drivers further than broadcasting_scale
                 match_state_array[i, j] = 2
+
     driver_decision_info_time = datetime.now()
     # print(f"generate driver decision info time:{(driver_decision_info_time - driver_decision_time).seconds}")
-
+    # print(distance_driver_order)
+    # print(radius_array)
+    # print(driver_decision_info)
     random.seed(10)
-    temp_random = np.random.random((num_order, num_driver))
-    # temp_random = 0
-    # driver_pick_flag = (driver_decision_info > temp_random) + 0
+    # temp_random = np.random.random((num_order, num_driver))
+    temp_random = 0.0
+    # if num_order>0 and num_driver>0:
+    #     test_driver_info = deepcopy(driver_decision_info)
+    #     test_driver_info =     sorted_array = np.sort(test_driver_info, axis=1)[:, ::-1]
+    #     print(test_driver_info,test_driver_info.shape)
+    #     test_driver_info_flag = (test_driver_info > temp_random) + 0
+    #     print(test_driver_info_flag,test_driver_info_flag.shape)
+    #
+    # driver_decision_info = np.sort(driver_decision_info, axis=1)[:, ::-1]
+    print(driver_decision_info)
+    driver_pick_flag = (driver_decision_info > temp_random)
+    # mask = driver_decision_info < 0.3
+
+    # 使用布尔数组将 driver_decision_info 中小于0.3的值置为0
+    # driver_decision_info[mask] = 0
+    # print(match_state_array)
+    # 使用相同的布尔数组将 match_state_array 中对应位置的值修改为3
+    # match_state_array[mask] = 3
+    # print(match_state_array)
+    # num_cancel = count_matches(driver_decision_info, driver_pick_flag)
     # index_1 = np.argwhere(driver_decision_info == 0).tolist()
     # index_2 = np.argwhere(driver_pick_flag == 0).tolist()
     # index_1 = set(tuple(item) for item in index_1)
@@ -261,15 +313,6 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     #     diff_row = index_diff[:, 0]
     #     diff_col = index_diff[:, 1]
     #     match_state_array[diff_row, diff_col] = 3
-    # temp_random = 0.1
-    driver_pick_flag = (driver_decision_info > temp_random) + 0
-    mask = driver_decision_info < 0.1
-
-    # 使用布尔数组将 driver_decision_info 中小于0.3的值置为0
-    driver_decision_info[mask] = 0
-    # print(match_state_array)
-    # 使用相同的布尔数组将 match_state_array 中对应位置的值修改为3
-    match_state_array[mask] = 3
 
     # for i in range(num_order):
     #     for j in range(num_driver):
@@ -302,11 +345,29 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
 
         index += 1
 
-    driver_pick_flag_time = datetime.now()
-    # print(f"generate driver pick up flag time:{(driver_pick_flag_time - driver_decision_info_time).seconds}")
+    # for i,row in enumerate(driver_pick_flag):
+    #     temp_line = np.argwhere(row == 1)
+    #     if len(temp_line) >= 1:
+    #         # temp_num = generate_random_num(len(temp_line) - 1)
+    #         prob = driver_decision_info[i, :]
+    #         # if a driver choose another order before, thr prob set to 0
+    #         for col_idx in range(num_driver):
+    #             if 1 in driver_pick_flag[:i, col_idx]:
+    #                 prob[col_idx] = 0
+    #         prob = prob / prob.sum()
+    #         temp_num = np.random.choice(num_driver, p=prob)
+    #         # temp_num = 1
+    #         row[:] = 0
+    #         row[temp_num] = 1
+    #         driver_pick_flag[i, :] = row
+    #         driver_pick_flag[i + 1:, temp_num] = 0
+
+
 
     matched_pair = np.argwhere(driver_pick_flag == 1)
     match_state_array[np.where(driver_pick_flag == 1)] = 1
+    print("matched_pair",len(matched_pair))
+    # n,N = count_ones(match_state_array)
     match_state_array = match_state_array.reshape(-1).tolist()
     new_all_requests['match_state'] = match_state_array
     new_all_requests['num_driver'] = num_driver
@@ -330,6 +391,21 @@ def dispatch_broadcasting(order_driver_info, dis_array, lr_model, mlp_model, cur
     # print("the result is",result)
     # new_all_requests.to_csv("./experiment/train_grid" + f"_{env_params['time_period']}" + "_model.csv",
     #                     mode='a', index=False, sep=',')
-
+    # filtered_order_driver_info = new_all_requests.loc[(new_all_requests['match_state']==1)|(new_all_requests['match_state']==4)]
+    #
+    # # 检查 driver_info 中的 driver_id 是否出现在 filtered_order_driver_info 中
+    # driver_table['accepted_state'] = driver_table['driver_id'].isin(filtered_order_driver_info['driver_id'])
+    # # 如果 driver_id 出现在 filtered_order_driver_info 中，将 num_accept 的值加 1，否则保持不变
+    # driver_table['num_accepted'] = driver_table.apply(
+    #     lambda row: row['num_accepted'] + 1 if row['accepted_state'] else row['num_accepted'], axis=1)
+    #
+    # # 删除辅助列
+    # driver_table.drop('accepted_state', axis=1, inplace=True)
+    # print([num_cancel,num_cancel/num_order*num_driver,n,N])
+    # columns = ['num_not_judged', 'prob_not_judged', 'n', 'N']
+    # df_dispatch = pd.DataFrame([[num_cancel,num_cancel/(num_order*num_driver),n,N]],columns=columns)
+    # with open('./broadcasting_statistics_threshold=0.55.csv', 'a') as f:
+    #     df_dispatch.to_csv(f, header=f.tell() == 0, index=False)
+    print(num_order,num_driver,len(result))
     return result, new_all_requests
 

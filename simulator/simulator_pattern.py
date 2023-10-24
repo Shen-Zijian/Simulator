@@ -30,27 +30,50 @@ class SimulatorPattern(object):
         if self.simulator_mode == 'toy_mode':
             self.request_all = pickle.load(open(data_path + self.request_file_name + '.pickle', 'rb'))
             # print(self.request_all)
-            self.driver_info = pickle.load(open(load_path + self.driver_file_name + '.pickle', 'rb'))#.head(env_params['driver_num'])
-            # print(np.min(self.driver_info['lng'].values), np.max(self.driver_info['lng'].values),np.average(self.driver_info['lng'].values))
-            # print(np.average(self.driver_info['lat'].values), np.max(self.driver_info['lat'].values),np.average(self.driver_info['lat'].values))
-            # print(all_requests)
-            # print(type(env_params['west_lng']),env_params['west_lng'])
-            # print(type(self.driver_info))
-            # driver_info_1 = self.driver_info.loc[(self.driver_info['lng'] > env_params['west_lng'])]
-            # print(driver_info_1['lng'].values)
-            # print(self.driver_info['lng'] > float(env_params['west_lng']))
-            # driver_info_2 = self.driver_info.loc[(self.driver_info['lng'] > 114.13)]
-            # print(driver_info_2['lng'].values)
-            # print(self.driver_info['lng'] > 114.13)
-            # west_lng_value = env_params['west_lng']
-            # driver_info_3 = self.driver_info.loc[(self.driver_info['lng'] >west_lng_value)]
-            # print(driver_info_3['lng'].values)
-            # self.driver_info = self.driver_info.loc[(self.driver_info['lng'] > 114.13)&(self.driver_info['lng'] < 114.235)&(self.driver_info['lat'] < 22.285)&(self.driver_info['lat'] > 22.23)]
-            # print(self.driver_info)
-            # print(self.driver_info['lng'] > west_lng_value)
-            # self.driver_info = self.driver_info.loc[(self.driver_info['lat'] < env_params['north_lat']) & (self.driver_info['lat'] > env_params['south_lat'])]
-            # self.driver_info = self.driver_info.sample(n=env_params['driver_num'])
-            # print(self.driver_info)
+            self.driver_info = pickle.load(open(load_path + self.driver_file_name + '.pickle', 'rb'))
+            # self.driver_info = pd.read_csv(load_path + self.driver_file_name + '.csv')
+            self.driver_info = self.driver_info.sample(n=env_params['driver_num'])
+            # self.driver_info['driver_id'] = range(len(self.driver_info))
+
+            print(np.sum(self.driver_info['end_time'].values - self.driver_info['start_time'].values))
+            gtime = 0
+            temp_request = []
+            num_request = 0
+            while gtime <= 86400:
+                if 0 <= gtime <= 86400:
+                    for time in range(gtime-2, gtime):
+                        if time in self.request_all.keys():
+                            temp_request.extend(self.request_all[time])
+                            database_size = len(temp_request)
+                            num_request += int(np.rint(1 * database_size))
+                            temp_request = []
+
+                # if 25200 <= gtime <= 32400:
+                #     for time in range(gtime-2, gtime):
+                #         if time in self.request_all.keys():
+                #             temp_request.extend(self.request_all[time])
+                #             database_size = len(temp_request)
+                #             num_request += int(np.rint(0.2 * database_size))
+                #             temp_request = []
+                #
+                # if 61200 <= gtime <= 68400:
+                #     for time in range(gtime-2, gtime):
+                #         if time in self.request_all.keys():
+                #             temp_request.extend(self.request_all[time])
+                #             database_size = len(temp_request)
+                #             num_request += int(np.rint(0.2 * database_size))
+                #             temp_request = []
+                #
+                # if 0 <= gtime <= 18000:
+                #     for time in range(gtime-2, gtime):
+                #         if time in self.request_all.keys():
+                #             temp_request.extend(self.request_all[time])
+                #             database_size = len(temp_request)
+                #             num_request += int(np.rint(0.2 * database_size))
+                #             temp_request = []
+                gtime+=2
+            print(num_request)
+            # sys.exit()
 
 
 
